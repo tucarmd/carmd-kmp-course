@@ -9,3 +9,5 @@ xcuserdata/
 DerivedData/
 _site/
 __pycache__/
+.build/
+.swiftpm/

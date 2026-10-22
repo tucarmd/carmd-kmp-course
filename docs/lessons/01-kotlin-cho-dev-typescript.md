@@ -890,6 +890,153 @@ Màn **Device** vừa quét BLE vừa đọc pin. Người dùng bấm Back thì
     3. **Dùng `GlobalScope.launch` cho tiện.** Đó là gọi món không ghi vào bàn nào, đúng kiểu "món mồ côi" của TS. Luôn launch trong một scope có chủ.
     4. **Dùng `runBlocking` trong app.** Nó chặn luồng thật; trên luồng UI là app đứng hình. Chỉ dùng ở `main` và test.
 
+### A2. `sealed interface`: kiểu "một trong mấy trạng thái"
+
+Giải thích thêm cho [mục 2](#2-data-class-va-sealed-interface).
+
+!!! abstract "Một câu để nhớ"
+    `sealed` nghĩa đen là **niêm phong**: một cái hộp chỉ có đúng mấy loại bên trong rồi **đóng nắp**. Compiler biết chắc chỉ có từng ấy trường hợp, nên `when` thiếu nhánh là báo lỗi ngay.
+
+#### Lồng bên trong chỉ là cách viết
+
+```kotlin
+sealed interface ScanState {
+    data object Idle : ScanState
+    data class Scanning(val found: Int) : ScanState
+    data class Done(val devices: List<Device>) : ScanState
+}
+```
+
+Đây là **1 kiểu cha** và **3 kiểu con**. Mỗi dòng có `: ScanState` nghĩa là "kiểu con này **là một** `ScanState`". Không có gì gọi đệ quy lại cả.
+
+Đặt bên trong `{ }` chỉ để **gom tên**: gọi là `ScanState.Idle`, `ScanState.Scanning(3)`. Viết tách ra ngoài chạy y hệt:
+
+```kotlin
+sealed interface ScanState
+data object Idle : ScanState
+data class Scanning(val found: Int) : ScanState
+data class Done(val devices: List<Device>) : ScanState
+```
+
+Cách lồng là cách chuẩn (code mẫu UI state của Google cũng viết vậy): nhìn `ScanState.Done` là biết nó thuộc nhóm nào, và tên ngắn như `Idle`, `Done`, `Error` không đụng tên khác trong project.
+
+#### So với TypeScript
+
+| Việc | TypeScript | Kotlin |
+|---|---|---|
+| Khai báo "một trong mấy trạng thái" | `type S = { kind: "idle" } \| { kind: "scanning"; found: number } \| …` | `sealed interface S { data object Idle : S; data class Scanning(val found: Int) : S; … }` |
+| Phân biệt từng trường hợp | `switch (s.kind)` | `when (s)` |
+| Đọc field riêng của một trường hợp | Narrowing theo `kind` | Smart cast sau `is Scanning` |
+| Thiếu một trường hợp | Chỉ bắt được nếu tự viết `assertNever(s)` | Lỗi compile, không cần `else` |
+| Trạng thái không có dữ liệu | `{ kind: "idle" }` (mỗi lần tạo một object) | `data object Idle` (chỉ một instance) |
+
+#### Chữ khoá nào làm gì
+
+- **`interface ScanState`**: kiểu chung. Biến kiểu `ScanState` giữ được `Idle`, `Scanning` hoặc `Done`.
+- **`sealed`**: danh sách con bị đóng. Chỉ code trong cùng module (và cùng package) mới thêm con được.
+- **`data object`**: trạng thái **không mang dữ liệu**, chỉ cần một instance duy nhất.
+- **`data class`**: trạng thái **có dữ liệu**. Kotlin tự sinh `equals`, `toString`, `copy`.
+
+#### Ví dụ: `when` đủ nhánh và smart cast
+
+```kotlin
+fun render(state: ScanState): String = when (state) {
+    ScanState.Idle -> "Idle"
+    is ScanState.Scanning -> "Scanning… ${state.found} found"   // state đã là Scanning
+    is ScanState.Done -> "Done: ${state.devices.size} devices"  // state đã là Done
+}
+
+fun main() {
+    val states = listOf(
+        ScanState.Idle,
+        ScanState.Scanning(1),
+        ScanState.Done(listOf(Device("OBD-II Dongle", -48))),
+    )
+    states.forEach { println(render(it)) }
+    println(ScanState.Idle)
+    println(ScanState.Scanning(2))
+    println(ScanState.Scanning(2) == ScanState.Scanning(2))
+}
+```
+
+Output:
+
+```text
+Idle
+Scanning… 1 found
+Done: 1 devices
+Idle
+Scanning(found=2)
+true
+```
+
+Hai dòng cuối là quà của `data`: `toString` đẹp sẵn, và hai `Scanning(2)` bằng nhau theo giá trị.
+
+#### Niêm phong được lợi gì: thêm trạng thái mới
+
+Thêm `data class Error(val message: String) : ScanState` vào hộp mà **không sửa** `render`, build sẽ dừng ngay:
+
+```text
+e: …/Main.kt:10:40 'when' expression must be exhaustive. Add the 'is Error' branch or an 'else' branch.
+```
+
+Mọi chỗ `when (state)` trong project đều báo như vậy cho tới khi bạn xử lý `Error`, nên không sót được chỗ nào. Bỏ chữ `sealed` đi thì ai cũng implement thêm được, compiler không biết hết các loại, `when` buộc phải có `else` và mất cái lợi này.
+
+!!! tip "Khi nào dùng"
+    Khi một thứ **chỉ có thể ở một trong vài trạng thái cố định**: màn hình đang tải / thành công / lỗi, kết quả gọi API thành công / thất bại, trạng thái quét BLE như bài này.
+
+### A3. `./gradlew run -q` chạy những gì
+
+Giải thích thêm cho [Bài tự làm](#bai-tu-lam) và [File đầy đủ](#file-ay-u): bấm lệnh này thì chuyện gì xảy ra.
+
+!!! abstract "Một câu để nhớ"
+    `./gradlew run` giống `npm start` với script `tsc && node dist/main.js`: **biên dịch** `src/main/kotlin/*.kt` rồi **chạy** hàm `main()` trong `Main.kt`.
+
+#### Từng phần của lệnh
+
+1. **`./gradlew`**: script wrapper nằm sẵn trong project. Nó đọc `gradle/wrapper/gradle-wrapper.properties` để biết cần Gradle bản nào (ở đây `gradle-9.8.2`), lần đầu tự tải về. Máy không cần cài Gradle, ai chạy cũng cùng version, giống `npx` gọi đúng version đã khoá.
+2. **Gradle đọc cấu hình:**
+    - `settings.gradle.kts`: tên project (`lesson01-kotlin`).
+    - `build.gradle.kts`: plugin `kotlin("jvm")` (biên dịch Kotlin ra bytecode JVM), plugin `application` (tạo task `run`), thư viện coroutines tải từ `mavenCentral()`, và `mainClass.set("MainKt")` (chạy từ đâu).
+3. **`run`**: tên task. Gradle chạy các task nó phụ thuộc trước, rồi mới chạy chương trình.
+4. **`-q`** (quiet): ẩn log của Gradle, chỉ để lại những gì chương trình `println`.
+
+#### Không có `-q` thì thấy gì
+
+`./gradlew run` (bỏ `-q`) in ra từng task theo thứ tự:
+
+```text
+> Task :checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :processResources NO-SOURCE
+> Task :compileKotlin
+> Task :compileJava NO-SOURCE
+> Task :classes UP-TO-DATE
+> Task :run
+Idle
+Scanning… 1 found
+Done: 1 devices
+…
+BUILD SUCCESSFUL in 1s
+```
+
+- **`compileKotlin`**: biên dịch `.kt` thành `.class` trong `build/classes/kotlin/main/`: `MainKt.class`, `ScanState.class`, `ScanState$Idle.class`, `ScanState$Scanning.class`, `ScanState$Done.class`, `Device.class`… (class lồng có tên dạng `Cha$Con`).
+- **`classes`**: gom kết quả biên dịch, không tự làm gì thêm.
+- **`run`**: tương đương `java -cp build/classes/kotlin/main:<jar coroutines> MainKt`.
+- Chạy lại mà code không đổi thì Gradle bỏ qua bước biên dịch (`UP-TO-DATE`), nên nhanh hơn.
+
+#### Vì sao là `MainKt`
+
+JVM chỉ chạy được **class**. `fun main()` viết ở cấp ngoài cùng của file `Main.kt`, nên compiler gói nó vào một class tên **tên file + `Kt`** là `MainKt`. Đổi tên file thành `App.kt` thì phải sửa thành `mainClass.set("AppKt")`.
+
+| Node / TypeScript | Gradle / Kotlin |
+|---|---|
+| `package.json` | `build.gradle.kts` + `settings.gradle.kts` |
+| `npx` gọi đúng version | `./gradlew` |
+| `npm install` (tải thư viện) | Gradle tự tải từ `mavenCentral()` khi build |
+| `tsc` → `dist/*.js` | `compileKotlin` → `build/classes/**/*.class` |
+| `node dist/main.js` | `java … MainKt` (task `run`) |
+| `"main": "dist/main.js"` | `application { mainClass.set("MainKt") }` |
+
 ---
 
 ## Sau bài này tự làm được gì
@@ -899,12 +1046,12 @@ Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 02.
 - [ ] Đọc một đoạn Kotlin và "dịch nhẩm" sang TypeScript: `val`/`var`, `String?`, `?.`, `?:`, `!!`, lambda `it`, trailing lambda.
 - [ ] Biết lúc nào dùng `?:` và vì sao **tránh** `!!` (nó ném lỗi thật, khác `!` của TS).
 - [ ] Viết một `data class` cho dữ liệu, dùng `copy()` để đổi một field mà không sửa bản gốc.
-- [ ] Mô hình hoá các trạng thái màn hình bằng `sealed interface` + `when` đủ nhánh, không cần `else`.
+- [ ] Mô hình hoá các trạng thái màn hình bằng `sealed interface` + `when` đủ nhánh, không cần `else`, và giải thích được chữ `sealed` (xem [A2](#a2-sealed-interface-kieu-mot-trong-may-trang-thai)).
 - [ ] Viết extension function để thêm hàm hiển thị cho một kiểu có sẵn.
 - [ ] Giải thích được `suspend fun` khác `async` của JS chỗ nào, và vì sao coroutine phải nằm trong một **scope** (xem [A1](#a1-coroutine-suspend-khong-phai-async)).
 - [ ] Đổi một đoạn `await Promise.all([...])` sang `coroutineScope { async {…}; async {…} }`, và huỷ một nhóm coroutine bằng một lệnh `cancel()`.
 - [ ] Viết một `Flow` lạnh bằng `flow { emit(...) }`, nối `filter` / `map`, chạy nó bằng `collect`.
 - [ ] Dùng mẫu backing property: `MutableStateFlow` private + `StateFlow` public chỉ đọc. Đây là khung của mọi ViewModel sau này.
 - [ ] Giải thích được vì sao `StateFlow` "nuốt" giá trị trung gian (conflation), và vì sao collect `StateFlow` mãi thì treo (dùng `first { }`).
-- [ ] Tự dựng một project Gradle Kotlin/JVM console và chạy bằng `./gradlew run`.
+- [ ] Tự dựng một project Gradle Kotlin/JVM console và chạy bằng `./gradlew run`, kể lại được lệnh đó biên dịch gì và chạy class nào (xem [A3](#a3-gradlew-run-q-chay-nhung-gi)).
 - [ ] Làm xong 2 bài tự làm ở trên mà không cần agent.

@@ -15,6 +15,7 @@ Repo học KMP theo khoá https://phongna-inn.github.io/carmd-kmp-course/ — si
 
 ## Nguồn bài và cập nhật
 
+- User dán link một bài (`…/carmd-kmp-course/lessons/NN-….html`) hoặc nói "dịch bài NN" → làm luôn theo luật dịch ở trên, không hỏi lại.
 - Không cần user gửi link. Danh sách bài: `gh api repos/phongna-inn/carmd-kmp-course/contents/lessons -q '.[].name'` → URL `https://phongna-inn.github.io/carmd-kmp-course/lessons/<tên>.html`.
 - Mỗi trang dịch có frontmatter `source:` (file gốc) và `source_sha:` (commit gốc lúc dịch).
 - Kiểm tra bản gốc đã sửa chưa: `gh api "repos/phongna-inn/carmd-kmp-course/commits?path=<source>&per_page=1"` — sha khác `source_sha` thì xem diff (`gh api repos/phongna-inn/carmd-kmp-course/compare/<source_sha>...<sha mới>`), dịch lại đúng phần đổi, cập nhật `source_sha`.

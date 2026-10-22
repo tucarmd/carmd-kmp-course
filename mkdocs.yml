@@ -2,6 +2,7 @@ site_name: Học KMP · CarMD
 site_description: Bản tiếng Việt của khoá carmd-kmp-course — xây app Native Device Monitor (Android + iOS) trên Kotlin Multiplatform.
 repo_url: https://github.com/tucarmd/carmd-kmp-course
 repo_name: tucarmd/carmd-kmp-course
+site_url: https://tucarmd.github.io/carmd-kmp-course/
 # Xem ở máy: mkdocs serve
 docs_dir: docs
 site_dir: _site

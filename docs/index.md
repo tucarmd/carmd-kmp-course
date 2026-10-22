@@ -3,6 +3,9 @@
 Bản tiếng Việt của khoá [carmd-kmp-course](https://phongna-inn.github.io/carmd-kmp-course/), viết lại cho dễ hiểu và nhanh nắm bài hơn.
 Code, tên hàm và lệnh giữ nguyên tiếng Anh như khoá gốc.
 
+!!! info "Bản dịch không chính thức"
+    Nội dung gốc thuộc về tác giả khoá [phongna-inn/carmd-kmp-course](https://github.com/phongna-inn/carmd-kmp-course). Đây là bản dịch cá nhân để học, có chỗ nào khác bản gốc thì theo bản gốc.
+
 ## Khoá này làm gì
 
 Xây **một** app, Native Device Monitor, chạy Android và iOS trên code Kotlin Multiplatform (KMP) dùng chung:

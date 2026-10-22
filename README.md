@@ -1,4 +1,4 @@
-# kmp-course
+# carmd-kmp-course
 
 Workspace học Kotlin Multiplatform theo khoá
 [carmd-kmp-course](https://phongna-inn.github.io/carmd-kmp-course/) — xây app Native Device Monitor (Android + iOS, shared Kotlin).

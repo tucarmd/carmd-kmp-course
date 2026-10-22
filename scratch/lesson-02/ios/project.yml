@@ -1,0 +1,22 @@
+# Sinh Lesson02iOS.xcodeproj bằng: xcodegen generate
+name: Lesson02iOS
+options:
+  bundleIdPrefix: com.learn
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+targets:
+  Lesson02iOS:
+    type: application
+    platform: iOS
+    sources: [Lesson02iOS]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.learn.lesson02
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Lesson 02
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic

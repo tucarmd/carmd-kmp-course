@@ -23,3 +23,5 @@ Repo học KMP theo khoá https://phongna-inn.github.io/carmd-kmp-course/ — si
 ## Git
 
 - Repo của acc **tucarmd** (config local đã set). Commit dạng `docs(lesson-NN): …`.
+- Xong mỗi bài (trang dịch + `scratch/lesson-NN/`) → annotated tag `lesson-NN` trên commit cuối của bài, message = `Lesson NN · <tên bài>` + danh sách commit của bài. Sửa thêm cho bài đã tag → dời tag (`git tag -fa`, `git push -f origin lesson-NN`). Push tag cùng lúc push commit.
+- Từ bài 05 (app trong `app/`) thêm tag milestone `mNN` như `docs/index.md` ghi.

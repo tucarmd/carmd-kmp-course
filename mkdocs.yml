@@ -70,6 +70,10 @@ plugins:
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/lesson.css
+
+extra_javascript:
+  - javascripts/quiz.js
 
 extra:
   social:

@@ -1,0 +1,84 @@
+/* Sơ đồ SVG, mã màu, thẻ meta và quiz — chép từ khoá gốc (assets/style.css), đổi token sang sáng/tối của Material. */
+
+:root {
+  --dg-ink: #1a1a1a;
+  --dg-ink-soft: #4a4a4a;
+  --dg-rule: #d8d3c7;
+  --dg-accent: #8a3b12;
+  --dg-card: #ffffff;
+  --dg-ok: #2f6f4f;
+  --dg-err: #a4302a;
+  --c-core: #6d3fc0;      --c-core-soft: #f1ebfb;
+  --c-inbound: #1f5fbf;   --c-inbound-soft: #e8f0fb;
+  --c-outbound: #b3306c;  --c-outbound-soft: #fbe9f1;
+  --c-android: #2f7d32;   --c-android-soft: #e9f4e9;
+  --c-ios: #9a5b00;       --c-ios-soft: #fbf0df;
+}
+
+[data-md-color-scheme="slate"] {
+  --dg-ink: #e8e4da;
+  --dg-ink-soft: #b3ad9f;
+  --dg-rule: #3a372f;
+  --dg-accent: #e09a6b;
+  --dg-card: #26241f;
+  --dg-ok: #7fc39d;
+  --dg-err: #ef8a83;
+  --c-core: #b79cf2;      --c-core-soft: #2b2340;
+  --c-inbound: #82adf0;   --c-inbound-soft: #1c2a40;
+  --c-outbound: #f08cbc;  --c-outbound-soft: #3a1e2c;
+  --c-android: #82cc85;   --c-android-soft: #1e3020;
+  --c-ios: #f2b45c;       --c-ios-soft: #3a2c16;
+}
+
+[data-part="core"]     { --part: var(--c-core);     --part-soft: var(--c-core-soft); }
+[data-part="inbound"]  { --part: var(--c-inbound);  --part-soft: var(--c-inbound-soft); }
+[data-part="outbound"] { --part: var(--c-outbound); --part-soft: var(--c-outbound-soft); }
+[data-part="android"]  { --part: var(--c-android);  --part-soft: var(--c-android-soft); }
+[data-part="ios"]      { --part: var(--c-ios);      --part-soft: var(--c-ios-soft); }
+
+/* ---- sơ đồ ---- */
+.md-typeset figure.diagram { margin: 1.25rem auto 1.5rem; display: block; max-width: 40rem; }
+.md-typeset figure.diagram > svg { display: block; width: 100%; height: auto; }
+.md-typeset figure.diagram > figcaption { font-size: .85rem; color: var(--dg-ink-soft); margin-top: .5rem; max-width: none; text-align: left; font-style: normal; }
+.dg { font-family: var(--md-text-font-family); font-size: 13px; }
+.dg text { fill: var(--dg-ink); }
+.dg .mono { font-family: var(--md-code-font-family); font-size: 12px; }
+.dg .small { font-size: 11px; }
+.dg .muted { fill: var(--dg-ink-soft); }
+.dg .box { fill: var(--dg-card); stroke: var(--dg-rule); stroke-width: 1.5; }
+.dg [data-part] .box { fill: var(--part-soft); stroke: var(--part); }
+.dg [data-part] text.title { fill: var(--part); font-weight: 600; }
+.dg .edge { fill: none; stroke: var(--dg-ink-soft); stroke-width: 1.5; }
+.dg .edge.dashed { stroke-dasharray: 5 4; }
+.dg .arrowhead { fill: var(--dg-ink-soft); }
+.dg .dot { fill: var(--dg-accent); }
+.dg .dot.dropped { fill: none; stroke: var(--dg-ink-soft); stroke-width: 1.5; stroke-dasharray: 2 2; }
+.dg .axis { stroke: var(--dg-rule); stroke-width: 1.5; }
+
+.md-typeset ul.legend { list-style: none; display: flex; flex-wrap: wrap; gap: .3rem 1rem; padding: 0; margin: .4rem 0 0; font-size: .78rem; color: var(--dg-ink-soft); }
+.md-typeset ul.legend li { margin: 0; }
+.md-typeset ul.legend li::before { content: ""; display: inline-block; width: .8em; height: .8em; margin-right: .35em; vertical-align: -.05em; border-radius: 2px; background: var(--part-soft); border: 2px solid var(--part); }
+
+/* ---- thẻ meta dưới tiêu đề ---- */
+.md-typeset .meta { display: flex; flex-wrap: wrap; gap: .4em; margin: 0 0 1em; }
+.md-typeset .tag { font-family: var(--md-code-font-family); font-size: .72rem; letter-spacing: .03em; text-transform: uppercase;
+  border: 1px solid var(--dg-rule); padding: .15em .5em; border-radius: 3px; }
+
+/* ---- code đặt cạnh nhau (TS | Kotlin) ---- */
+.md-typeset .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; margin: 1rem 0 1.5rem; }
+.md-typeset .compare > div { min-width: 0; }
+.md-typeset .compare .highlight, .md-typeset .compare pre { margin: 0; }
+
+/* ---- câu hỏi ôn (bấm chọn đáp án) ---- */
+.md-typeset .quiz { border: 1px solid var(--dg-rule); border-radius: 8px; padding: .6em 1em .8em; margin: 1em 0; }
+.md-typeset .quiz .q { margin: .2em 0 .6em; font-weight: 600; }
+.md-typeset .quiz .opts { display: flex; flex-direction: column; gap: .4em; }
+.md-typeset .quiz .opt { text-align: left; font: inherit; font-family: var(--md-code-font-family); font-size: .8rem; cursor: pointer;
+  padding: .45em .7em; border: 1px solid var(--dg-rule); border-radius: 6px; background: transparent; color: inherit; }
+.md-typeset .quiz .opt:hover { border-color: var(--dg-ink-soft); }
+.md-typeset .quiz .opt.right { border-color: var(--dg-ok); color: var(--dg-ok); }
+.md-typeset .quiz .opt.wrong { border-color: var(--dg-err); color: var(--dg-err); text-decoration: line-through; }
+.md-typeset .quiz .feedback { margin: .5em 0 0; font-weight: 600; }
+.md-typeset .quiz .why { display: none; margin: .3em 0 0; }
+.md-typeset .quiz.answered .why { display: block; }
+.md-typeset .kicker { font-size: .78rem; color: var(--dg-ink-soft); margin: -.4em 0 .6em; }

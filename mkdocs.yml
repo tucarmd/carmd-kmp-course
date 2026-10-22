@@ -86,6 +86,7 @@ nav:
   - "Bài học":
       - "Tuần 1":
           - "1. Kotlin cho dev TypeScript": lessons/01-kotlin-cho-dev-typescript.md
+          - "2. Swift cho dev TypeScript": lessons/02-swift-cho-dev-typescript.md
 
 validation:
   links:

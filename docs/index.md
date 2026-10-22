@@ -28,6 +28,6 @@ Màn hình viết native (Compose trên Android, SwiftUI trên iOS). Phần còn
 | Bài | Xong |
 |---|---|
 | [01 · Kotlin cho dev TypeScript](lessons/01-kotlin-cho-dev-typescript.md) | |
-| 02 · Swift cho dev TypeScript | |
+| [02 · Swift cho dev TypeScript](lessons/02-swift-cho-dev-typescript.md) | |
 | 03 · Android cơ bản | |
 | 04 · iOS cơ bản | |

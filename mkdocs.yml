@@ -30,6 +30,7 @@ theme:
     - search.highlight
     - content.code.copy
     - content.code.annotate
+    - content.tabs.link
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -87,6 +88,7 @@ nav:
       - "Tuần 1":
           - "1. Kotlin cho dev TypeScript": lessons/01-kotlin-cho-dev-typescript.md
           - "2. Swift cho dev TypeScript": lessons/02-swift-cho-dev-typescript.md
+          - "3. Android cơ bản": lessons/03-android-co-ban.md
 
 validation:
   links:

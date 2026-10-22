@@ -1,3 +1,8 @@
+---
+source: lessons/01-kotlin-for-typescript-devs.html
+source_sha: 35a79ec
+---
+
 # Kotlin cho dev TypeScript
 
 <p class="kicker">Bài 01 · Tuần 1 · Ngày 1 · Khoá Native Device Monitor · <a href="https://phongna-inn.github.io/carmd-kmp-course/lessons/01-kotlin-for-typescript-devs.html">Bản gốc tiếng Anh</a></p>

@@ -13,6 +13,12 @@ Repo học KMP theo khoá https://phongna-inn.github.io/carmd-kmp-course/ — si
 7. **Cuối trang luôn có `## Sau bài này tự làm được gì`** — checklist `- [ ]`.
 8. Thêm bài vào `nav` trong `mkdocs.yml` và bảng tiến độ ở `docs/index.md`; `mkdocs build --strict` phải sạch trước khi commit.
 
+## Nguồn bài và cập nhật
+
+- Không cần user gửi link. Danh sách bài: `gh api repos/phongna-inn/carmd-kmp-course/contents/lessons -q '.[].name'` → URL `https://phongna-inn.github.io/carmd-kmp-course/lessons/<tên>.html`.
+- Mỗi trang dịch có frontmatter `source:` (file gốc) và `source_sha:` (commit gốc lúc dịch).
+- Kiểm tra bản gốc đã sửa chưa: `gh api "repos/phongna-inn/carmd-kmp-course/commits?path=<source>&per_page=1"` — sha khác `source_sha` thì xem diff (`gh api repos/phongna-inn/carmd-kmp-course/compare/<source_sha>...<sha mới>`), dịch lại đúng phần đổi, cập nhật `source_sha`.
+
 ## Git
 
 - Repo của acc **tucarmd** (config local đã set). Commit dạng `docs(lesson-NN): …`.

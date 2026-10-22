@@ -1,0 +1,88 @@
+site_name: Học KMP · CarMD
+site_description: Bản tiếng Việt của khoá carmd-kmp-course — xây app Native Device Monitor (Android + iOS) trên Kotlin Multiplatform.
+repo_url: https://github.com/tucarmd/carmd-kmp-course
+repo_name: tucarmd/carmd-kmp-course
+# Xem ở máy: mkdocs serve
+docs_dir: docs
+site_dir: _site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: vi
+  custom_dir: overrides
+  font:
+    text: Figtree
+    code: JetBrains Mono
+  icon:
+    logo: material/language-kotlin
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-night, name: Chế độ tối }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-sunny, name: Chế độ sáng }
+
+markdown_extensions:
+  - tables
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc: { permalink: true }
+  - pymdownx.highlight: { anchor_linenums: true }
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed: { alternate_style: true }
+  - pymdownx.details
+  - pymdownx.tasklist: { custom_checkbox: true }
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+hooks:
+  - hooks/lesson_bar.py
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/solid/book
+      link: https://phongna-inn.github.io/carmd-kmp-course/
+      name: Khoá gốc (tiếng Anh)
+
+nav:
+  - "Trang chủ": index.md
+  - "Bài học":
+      - "Tuần 1":
+          - "1. Kotlin cho dev TypeScript": lessons/01-kotlin-cho-dev-typescript.md
+
+validation:
+  links:
+    not_found: warn
+    unrecognized_links: info

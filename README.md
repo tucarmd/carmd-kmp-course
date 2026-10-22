@@ -5,7 +5,9 @@ Workspace học Kotlin Multiplatform theo khoá
 
 ## Cấu trúc
 
-- `scratch/lesson-XX/` — chương trình nháp của từng bài (vd `scratch/lesson-01/kotlin/`)
+- `docs/` — bản tiếng Việt của từng bài (MkDocs Material). Xem ở máy: `mkdocs serve`
+- `scratch/lesson-01..04/` — chương trình nháp, mỗi bài một folder
+- `app/` — từ bài 05: một app duy nhất, mỗi bài một milestone, xong bài thì `git tag mNN`
 
 ## Tiến độ
 

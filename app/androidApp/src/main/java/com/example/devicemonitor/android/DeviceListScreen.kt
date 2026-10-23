@@ -1,16 +1,19 @@
 package com.example.devicemonitor.android
 
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -23,64 +26,54 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.example.devicemonitor.Device
 import com.example.devicemonitor.SampleDevices
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Stateful: owns the screen's state and the scan side effect.
 @Composable
-fun DeviceMonitorScreen() {
+fun DeviceListScreen(onDeviceClick: (Device) -> Unit) {
     var filter by rememberSaveable { mutableStateOf("") }
-    var foundCount by rememberSaveable { mutableStateOf<Int?>(null) }
+    var foundIds by rememberSaveable { mutableStateOf<List<String>?>(null) }
     var isScanning by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    DeviceMonitorContent(
+    DeviceListContent(
         filter = filter,
         onFilterChange = { filter = it },
         isScanning = isScanning,
-        foundCount = foundCount,
+        devices = foundIds?.mapNotNull { SampleDevices.find(it) },
         onScan = {
             val query = filter
             isScanning = true
-            foundCount = null
+            foundIds = null
             scope.launch {
                 delay(1_500)
-                foundCount = SampleDevices.matching(query).size
+                foundIds = SampleDevices.matching(query).map { it.id }
                 isScanning = false
             }
         },
+        onDeviceClick = onDeviceClick,
     )
 }
 
 // Stateless: renders whatever it's given, reports events up.
 @Composable
-fun DeviceMonitorContent(
+fun DeviceListContent(
     filter: String,
     onFilterChange: (String) -> Unit,
     isScanning: Boolean,
-    foundCount: Int?,
+    devices: List<Device>?,
     onScan: () -> Unit,
+    onDeviceClick: (Device) -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_bluetooth),
-                contentDescription = null,
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-                modifier = Modifier.size(32.dp),
-            )
-            Text("Device Monitor", style = MaterialTheme.typography.headlineSmall)
-        }
+        Text("Device Monitor", style = MaterialTheme.typography.headlineSmall)
         OutlinedTextField(
             value = filter,
             onValueChange = onFilterChange,
@@ -91,12 +84,18 @@ fun DeviceMonitorContent(
         Button(onClick = onScan, enabled = !isScanning, modifier = Modifier.fillMaxWidth()) {
             Text("Scan")
         }
-        ScanStatus(isScanning = isScanning, foundCount = foundCount)
+        ScanStatus(isScanning = isScanning, devices = devices)
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(devices.orEmpty(), key = { it.id }) { device ->
+                DeviceRow(device = device, onClick = { onDeviceClick(device) })
+                HorizontalDivider()
+            }
+        }
     }
 }
 
 @Composable
-private fun ScanStatus(isScanning: Boolean, foundCount: Int?) {
+private fun ScanStatus(isScanning: Boolean, devices: List<Device>?) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -106,12 +105,22 @@ private fun ScanStatus(isScanning: Boolean, foundCount: Int?) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Text("Scanning…")
             }
-            foundCount == null -> Text("Tap Scan to look for devices.")
-            foundCount == 0 -> Text(
+            devices == null -> Text("Tap Scan to look for devices.")
+            devices.isEmpty() -> Text(
                 "No devices found. Try another filter.",
                 color = MaterialTheme.colorScheme.error,
             )
-            else -> Text("Devices found: $foundCount")
+            else -> Text("Devices found: ${devices.size}")
         }
     }
+}
+
+@Composable
+private fun DeviceRow(device: Device, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(device.name) },
+        supportingContent = { Text(device.id) },
+        trailingContent = { Text("${device.rssi} dBm") },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
 }

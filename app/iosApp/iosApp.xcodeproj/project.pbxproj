@@ -8,21 +8,27 @@
 
 /* Begin PBXBuildFile section */
 		307C2654CD5972A25FB7FD87 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668CECA83ACC03A83C85A623 /* iOSApp.swift */; };
-		504C58BF3DF5D1258E04AC3A /* DeviceMonitorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68EFF12DE781E9231289F815 /* DeviceMonitorView.swift */; };
+		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
+		7CEA1647F286835C3C6AA32F /* DeviceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D77B92C0841C5305A442219 /* DeviceDetailView.swift */; };
+		E2DB14E8F4F47BC2B26F03CC /* DeviceListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F17D90EC7E19C1990F01BAF /* DeviceListView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3F17D90EC7E19C1990F01BAF /* DeviceListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceListView.swift; sourceTree = "<group>"; };
 		668CECA83ACC03A83C85A623 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
-		68EFF12DE781E9231289F815 /* DeviceMonitorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceMonitorView.swift; sourceTree = "<group>"; };
+		7D77B92C0841C5305A442219 /* DeviceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDetailView.swift; sourceTree = "<group>"; };
 		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C117AD187833E2513BD2F553 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		1DB4B685CAEE8BEFEBBAEF94 /* iosApp */ = {
 			isa = PBXGroup;
 			children = (
-				68EFF12DE781E9231289F815 /* DeviceMonitorView.swift */,
+				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
+				7D77B92C0841C5305A442219 /* DeviceDetailView.swift */,
+				3F17D90EC7E19C1990F01BAF /* DeviceListView.swift */,
 				C117AD187833E2513BD2F553 /* Info.plist */,
 				668CECA83ACC03A83C85A623 /* iOSApp.swift */,
 			);
@@ -123,7 +129,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				504C58BF3DF5D1258E04AC3A /* DeviceMonitorView.swift in Sources */,
+				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
+				7CEA1647F286835C3C6AA32F /* DeviceDetailView.swift in Sources */,
+				E2DB14E8F4F47BC2B26F03CC /* DeviceListView.swift in Sources */,
 				307C2654CD5972A25FB7FD87 /* iOSApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -12,4 +12,6 @@ object SampleDevices {
 
     fun matching(filter: String): List<Device> =
         all.filter { it.name.contains(filter.trim(), ignoreCase = true) }
+
+    fun find(id: String): Device? = all.firstOrNull { it.id == id }
 }

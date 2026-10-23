@@ -31,3 +31,4 @@ Màn hình viết native (Compose trên Android, SwiftUI trên iOS). Phần còn
 | [02 · Swift cho dev TypeScript](lessons/02-swift-cho-dev-typescript.md) | |
 | [03 · Android cơ bản](lessons/03-android-co-ban.md) | |
 | [04 · iOS cơ bản](lessons/04-ios-co-ban.md) | |
+| [05 · Giải phẫu project KMP](lessons/05-giai-phau-project-kmp.md) · m00 | |

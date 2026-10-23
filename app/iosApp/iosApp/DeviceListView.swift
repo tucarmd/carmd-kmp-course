@@ -3,12 +3,13 @@ import Shared
 
 // Stateful: owns the filter text and connects the shared ViewModel to the content below.
 struct DeviceListView: View {
-    @State private var observer = DeviceListObserver()
+    @State private var owner = ViewModelOwner()
     @State private var filter = ""
+    @State private var state: DeviceListUiState?
 
     var body: some View {
-        let viewModel = observer.viewModel
-        let state = observer.state
+        let viewModel: DeviceListViewModel = owner.viewModel(factory: DeviceListViewModel.companion.Factory)
+        let state = self.state ?? viewModel.uiState.value
         DeviceListContent(
             filter: $filter,
             isScanning: state.scan is ScanStateScanning,
@@ -24,13 +25,20 @@ struct DeviceListView: View {
             actions: { Button("OK") {} },
             message: { Text(state.errorMessage ?? "") }
         )
+        .task {
+            for await newState in viewModel.uiState {
+                self.state = newState
+            }
+        }
     }
 
-    // Without SKIE, Swift sees ScanState as a protocol: no exhaustive switch, so cast.
+    // SKIE turns the sealed interface into a Swift enum, so this switch is exhaustive.
     private func devices(in scan: ScanState) -> [Device]? {
-        if let scanning = scan as? ScanStateScanning { return scanning.found }
-        if let finished = scan as? ScanStateFinished { return finished.found }
-        return nil
+        switch onEnum(of: scan) {
+        case .idle: nil
+        case .scanning(let scanning): scanning.found
+        case .finished(let finished): finished.found
+        }
     }
 }
 

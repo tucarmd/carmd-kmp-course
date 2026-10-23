@@ -34,3 +34,4 @@ Màn hình viết native (Compose trên Android, SwiftUI trên iOS). Phần còn
 | [05 · Giải phẫu project KMP](lessons/05-giai-phau-project-kmp.md) · m00 | |
 | [06 · UI declarative: thành phần, state, layout](lessons/06-ui-declarative-thanh-phan.md) · m01 | |
 | [07 · UI declarative: danh sách, bất đồng bộ, điều hướng](lessons/07-ui-declarative-danh-sach.md) · m02 | |
+| [08 · ViewModel dùng chung](lessons/08-viewmodel-dung-chung.md) · m03 | |

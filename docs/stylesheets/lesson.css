@@ -106,3 +106,10 @@
 .md-typeset .shots figure { margin: 0; max-width: none; }
 .md-typeset .shots img { width: 100%; height: auto; border: 1px solid var(--dg-rule); border-radius: 10px; display: block; }
 .md-typeset .shots figcaption { font-family: var(--md-code-font-family); font-size: .66rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dg-ink-soft); margin-top: .3rem; max-width: none; }
+
+/* ---- toy ViewModel (bài 08) — chép từ assets/style.css của khoá gốc ---- */
+.md-typeset .toy pre.toy-log { margin: .5rem 0 0; font-size: .7em; height: 7.5rem; overflow-y: auto; white-space: pre-wrap; }
+.md-typeset .toy-toggle { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; color: var(--dg-ink-soft); }
+.md-typeset .phone { transition: transform .4s ease; }
+.md-typeset .phone.rotated { transform: rotate(90deg) scale(.6); }
+@media (prefers-reduced-motion: reduce) { .md-typeset .phone { transition: none; } }

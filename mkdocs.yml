@@ -95,6 +95,7 @@ nav:
       - "Tuần 2":
           - "6. UI declarative: thành phần": lessons/06-ui-declarative-thanh-phan.md
           - "7. UI declarative: danh sách": lessons/07-ui-declarative-danh-sach.md
+          - "8. ViewModel dùng chung": lessons/08-viewmodel-dung-chung.md
 
 validation:
   links:

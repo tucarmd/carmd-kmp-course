@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -17,46 +18,51 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.devicemonitor.Device
-import com.example.devicemonitor.SampleDevices
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.example.devicemonitor.DeviceListViewModel
+import com.example.devicemonitor.ScanState
 
-// Stateful: owns the screen's state and the scan side effect.
+// Stateful: owns the filter text and connects the shared ViewModel to the content below.
 @Composable
-fun DeviceListScreen(onDeviceClick: (Device) -> Unit) {
+fun DeviceListScreen(
+    onDeviceClick: (Device) -> Unit,
+    viewModel: DeviceListViewModel = viewModel(factory = DeviceListViewModel.Factory),
+) {
     var filter by rememberSaveable { mutableStateOf("") }
-    var foundIds by rememberSaveable { mutableStateOf<List<String>?>(null) }
-    var isScanning by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     DeviceListContent(
         filter = filter,
         onFilterChange = { filter = it },
-        isScanning = isScanning,
-        devices = foundIds?.mapNotNull { SampleDevices.find(it) },
-        onScan = {
-            val query = filter
-            isScanning = true
-            foundIds = null
-            scope.launch {
-                delay(1_500)
-                foundIds = SampleDevices.matching(query).map { it.id }
-                isScanning = false
-            }
+        isScanning = state.scan is ScanState.Scanning,
+        devices = when (val scan = state.scan) {
+            ScanState.Idle -> null
+            is ScanState.Scanning -> scan.found
+            is ScanState.Finished -> scan.found
         },
+        onScan = { viewModel.startScan(filter) },
         onDeviceClick = onDeviceClick,
     )
+
+    state.errorMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::errorShown,
+            confirmButton = { TextButton(onClick = viewModel::errorShown) { Text("OK") } },
+            title = { Text("Scan failed") },
+            text = { Text(message) },
+        )
+    }
 }
 
 // Stateless: renders whatever it's given, reports events up.

@@ -1,17 +1,52 @@
 import SwiftUI
 import Shared
 
+// Stateful: owns the filter text and connects the shared ViewModel to the content below.
 struct DeviceListView: View {
+    @State private var observer = DeviceListObserver()
     @State private var filter = ""
-    @State private var devices: [Device]? = nil
-    @State private var isScanning = false
+
+    var body: some View {
+        let viewModel = observer.viewModel
+        let state = observer.state
+        DeviceListContent(
+            filter: $filter,
+            isScanning: state.scan is ScanStateScanning,
+            devices: devices(in: state.scan),
+            onScan: { viewModel.startScan(filter: filter) }
+        )
+        .alert(
+            "Scan failed",
+            isPresented: Binding(
+                get: { state.errorMessage != nil },
+                set: { if !$0 { viewModel.errorShown() } }
+            ),
+            actions: { Button("OK") {} },
+            message: { Text(state.errorMessage ?? "") }
+        )
+    }
+
+    // Without SKIE, Swift sees ScanState as a protocol: no exhaustive switch, so cast.
+    private func devices(in scan: ScanState) -> [Device]? {
+        if let scanning = scan as? ScanStateScanning { return scanning.found }
+        if let finished = scan as? ScanStateFinished { return finished.found }
+        return nil
+    }
+}
+
+// Stateless: renders whatever it's given, reports events up.
+struct DeviceListContent: View {
+    @Binding var filter: String
+    let isScanning: Bool
+    let devices: [Device]?
+    let onScan: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             TextField("Device name filter", text: $filter)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
-            Button(action: scan) {
+            Button(action: onScan) {
                 Text("Scan")
                     .frame(maxWidth: .infinity)
             }
@@ -27,17 +62,6 @@ struct DeviceListView: View {
         }
         .padding()
         .navigationTitle("Device Monitor")
-    }
-
-    private func scan() {
-        let query = filter
-        isScanning = true
-        devices = nil
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            devices = SampleDevices.shared.matching(filter: query)
-            isScanning = false
-        }
     }
 }
 

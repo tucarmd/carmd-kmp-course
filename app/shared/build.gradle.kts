@@ -14,6 +14,15 @@ kotlin {
         target.binaries.framework {
             baseName = "Shared"
             isStatic = true
+            export("androidx.lifecycle:lifecycle-viewmodel:2.11.0")
+            binaryOption("bundleId", "com.example.devicemonitor.shared")
+        }
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            api("androidx.lifecycle:lifecycle-viewmodel:2.11.0")
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
         }
     }
 }

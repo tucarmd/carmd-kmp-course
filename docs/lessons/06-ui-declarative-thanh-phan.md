@@ -1666,7 +1666,17 @@ Xoá `iosApp/iosApp/ContentView.swift` (SwiftUI) hoặc `iosApp/iosApp/ViewContr
 ## Appendix
 
 Phần này **không có trong bản gốc**. Đây là giải thích thêm cho những chỗ khó hiểu của bài.
-Ví dụ có output (A1, A2, A4) là chương trình Kotlin console đã chạy thật (Kotlin 2.4.21, JVM 17, kotlinx-coroutines 1.11.0). Code Compose / SwiftUI / React trong phần này chỉ để minh hoạ, không kèm output.
+Ví dụ có output (A1, A2, A4, A7, A8, A9) là chương trình Kotlin console đã chạy thật (Kotlin 2.4.21, JVM 17, kotlinx-coroutines 1.11.0). Code Compose / SwiftUI / React trong phần này chỉ để minh hoạ, không kèm output.
+
+!!! tip "Thấy bài khó? Đọc theo thứ tự này"
+    1. [A6](#a6-bai-nay-noi-on-gian-trong-5-cau-tu-ien-nhanh): bài này nói gì trong 5 câu, kèm từ điển các chữ mới.
+    2. [A1](#a1-hai-bug-cua-toy-chay-that-bang-kotlin): vì sao phải đổi cách viết UI (mục 1).
+    3. [A7](#a7-side-effect-la-gi-va-vi-sao-ham-ui-khong-uoc-co): vì sao hàm UI không được tự làm việc (mục 2).
+    4. [A8](#a8-hanh-trinh-cua-mot-lan-bam-scan-tung-buoc): một lần bấm Scan đi qua những bước nào (mục 5).
+    5. [A2](#a2-var-filter-by-remembersaveable-mutablestateof-oc-the-nao), [A3](#a3-state-hoisting-va-binding-at-canh-react), [A4](#a4-vi-sao-phai-chup-val-query-filter-luc-bam): từng dòng khó trong code màn hình.
+    6. [A9](#a9-xoay-may-vi-sao-android-quen-viec-ang-chay): xoay máy thì mất gì, còn gì (mục 6).
+    7. [A10](#a10-bon-track-mot-bang) và [A11](#a11-state-struct-va-task-noi-on-gian): so bốn track trong một bảng, và phần Swift nói đơn giản.
+    8. [A5](#a5-tu-vung-layout-cua-bon-toolkit-so-voi-css): tra layout khi cần (mục 4).
 
 ### A1. Hai bug của toy, chạy thật bằng Kotlin
 
@@ -1950,6 +1960,315 @@ Ba chỗ hay vấp, đã gặp trong bài:
 - **`.frame` trên label, không trên `Button`** (SwiftUI). Nút chỉ vẽ nền quanh label của nó; frame bọc ngoài `Button` chỉ là khoảng trống vô hình.
 - **Content hugging** (UIKit). Nghĩ như `flex-grow`: stack cần một view "chịu giãn". Mặc định icon và label cùng priority 250, nên view đầu tiên (icon) bị giãn. Đặt icon `.required` là bảo nó "`flex-grow: 0`".
 
+### A6. Bài này nói đơn giản trong 5 câu, từ điển nhanh
+
+Tóm tắt cả bài, đọc trước khi vào mục 1 nếu bài thấy nặng.
+
+!!! abstract "5 câu"
+    1. Màn hình chỉ là **bản vẽ của vài biến** (`filter`, `isScanning`, `foundCount`). Muốn màn hình đổi thì đổi biến, đừng sửa màn hình.
+    2. Chữ trạng thái, nút bật/tắt, màu đỏ **không lưu riêng**, mà mỗi lần vẽ thì tính lại từ ba biến đó.
+    3. Framework **tự gọi lại hàm vẽ** mỗi khi biến đổi, gọi bao nhiêu lần là việc của nó. Vì vậy hàm vẽ không được tự đi làm việc (quét, ghi file).
+    4. Việc thật (quét) chỉ bắt đầu khi **người dùng bấm**, trong callback của nút.
+    5. Android **dựng lại màn hình khi xoay máy**: biến nào được "gửi giữ" thì còn, việc đang chạy thì bị huỷ. iOS không dựng lại nên không bị.
+
+Ví dụ đời thường: màn hình là **bảng điểm** trong sân bóng. Trọng tài không leo lên sửa từng con số trên bảng, mà chỉ báo "đội A ghi bàn" cho phòng điều khiển, và phòng điều khiển vẽ lại cả bảng từ tỉ số. Bảng không bao giờ lệch tỉ số, vì nó không tự nhớ gì cả.
+
+| Chữ trong bài | Nói đơn giản | Trong m01 là |
+|---|---|---|
+| imperative | ra lệnh cho từng widget: "tắt đi", "đổi chữ" | track XML, UIKit |
+| declarative | tả màn hình *nên* trông thế nào với state hiện tại | track Compose, SwiftUI |
+| state | các biến mà màn hình phụ thuộc vào | `filter`, `isScanning`, `foundCount` |
+| state suy ra (derived) | thứ tính được từ state, không cần lưu | chữ "Devices found: 5", màu đỏ, nút bật/tắt |
+| single source of truth | mỗi thông tin chỉ nằm ở **một** biến | không có biến `statusText` riêng |
+| recomposition / tính lại `body` | framework gọi lại hàm vẽ vì state đổi | `DeviceMonitorContent`, `body` chạy lại |
+| side effect | việc làm thay đổi thế giới bên ngoài hàm: quét, ghi file, tăng bộ đếm | bắt đầu quét |
+| callback / event handler | hàm chạy khi có sự kiện (bấm, gõ) | `onScan`, `scan()` |
+| coroutine scope | "người quản lý" các coroutine; huỷ scope là huỷ hết việc nó đang chạy | `rememberCoroutineScope()`, `lifecycleScope` |
+| state hoisting | kéo state lên cha, con chỉ nhận giá trị và báo sự kiện | `DeviceMonitorScreen` → `DeviceMonitorContent` |
+| unidirectional data flow | state đi xuống, sự kiện đi lên, không có đường tắt | mũi tên của sơ đồ ở mục 5 |
+| saved state | giá trị được Android giữ hộ qua lần xoay máy | `rememberSaveable`, `onSaveInstanceState` |
+| `render()` | hàm duy nhất được ghi vào widget ở track imperative | `render()` của XML/UIKit |
+
+### A7. Side effect là gì, và vì sao hàm UI không được có
+
+Giải thích thêm cho [mục 2](#2-chay-lai-ui-va-side-effect-nam-o-au).
+
+Ví dụ đời thường: hàm UI giống **máy photocopy**. Bạn bấm in bao nhiêu lần cũng được, mỗi lần ra một bản giống nhau. Nhưng nếu mỗi lần in máy lại tự **gọi điện đặt một pizza** (side effect), thì in 5 bản là có 5 cái pizza.
+Framework là người bấm in, và nó bấm khi nó muốn: lúc mở app, mỗi phím gõ, lúc đổi dark mode…
+
+Chương trình dưới đây giả lập đúng chuyện đó: framework gọi hàm UI 5 lần trong khi người dùng chưa bấm gì.
+
+```kotlin title="A7.kt"
+// Mô hình rất nhỏ của "framework": mỗi lần state đổi thì gọi lại hàm UI.
+var renderCount = 0
+var scansStarted = 0
+
+fun startScan() { scansStarted++ }
+
+// SAI: hàm UI tự bắt đầu quét
+fun badUi(isScanning: Boolean): String {
+    renderCount++
+    startScan()                                  // side effect trong hàm UI
+    return if (isScanning) "Scanning…" else "Tap Scan"
+}
+
+// ĐÚNG: hàm UI chỉ trả về màn hình; quét nằm trong callback onScan
+fun goodUi(isScanning: Boolean): String {
+    renderCount++
+    return if (isScanning) "Scanning…" else "Tap Scan"
+}
+
+fun main() {
+    // framework có thể gọi hàm UI bao nhiêu lần tuỳ ý: mở app, gõ phím, đổi theme…
+    val reasons = listOf("mở app", "gõ 's'", "gõ 'e'", "gõ 'n'", "đổi dark mode")
+
+    reasons.forEach { badUi(isScanning = false) }
+    println("badUi : render $renderCount lần → đã bắt đầu $scansStarted lần quét (người dùng chưa bấm gì)")
+
+    renderCount = 0; scansStarted = 0
+    reasons.forEach { goodUi(isScanning = false) }
+    val onScan = { startScan() }                 // callback: chỉ chạy khi người dùng bấm
+    onScan()
+    goodUi(isScanning = true)
+    println("goodUi: render $renderCount lần → đã bắt đầu $scansStarted lần quét (đúng 1 lần bấm)")
+}
+```
+
+```text title="Output"
+badUi : render 5 lần → đã bắt đầu 5 lần quét (người dùng chưa bấm gì)
+goodUi: render 6 lần → đã bắt đầu 1 lần quét (đúng 1 lần bấm)
+```
+
+Số lần render không quan trọng, bạn cũng không kiểm soát được nó. Số lần quét thì phải đúng bằng số lần người dùng bấm.
+
+Vậy việc nào đặt ở đâu? Hỏi một câu: **"Việc này xảy ra vì người dùng làm gì, hay vì màn hình vừa hiện ra?"**
+
+| Muốn làm | Vì sao xảy ra | Compose | SwiftUI |
+|---|---|---|---|
+| quét khi bấm Scan (m01) | người dùng bấm | trong `onClick` / `onScan`, async thì `scope.launch { }` | trong `Button(action:)`, async thì `Task { }` |
+| quét ngay khi mở màn hình (m01 *không* làm) | màn hình hiện ra | `LaunchedEffect(Unit) { … }` | `.task { … }` |
+| tính chữ "Devices found: 5" | không phải side effect | ngay trong hàm UI | ngay trong `body` |
+
+Minh hoạ cách viết hàng thứ hai (không có trong app m01):
+
+<div class="compare" markdown>
+
+```kotlin title="Compose: chạy một lần khi hiện ra"
+LaunchedEffect(Unit) {
+    delay(1_500)
+    foundCount = SampleDevices.matching("").size
+}
+```
+
+```swift title="SwiftUI: chạy một lần khi hiện ra"
+.task {
+    try? await Task.sleep(for: .seconds(1.5))
+    foundCount = SampleDevices.shared.matching(filter: "").count
+}
+```
+
+</div>
+
+Cả hai được framework *chạy một lần* khi view xuất hiện (và huỷ khi view biến mất), dù hàm UI chạy lại bao nhiêu lần đi nữa. Từ React: đây là vai của `useEffect(() => { … }, [])`.
+
+### A8. Hành trình của một lần bấm Scan, từng bước
+
+Giải thích thêm cho [mục 5](#5-state-su-kien-va-dong-trang-thai) và sơ đồ "ba lần render" ở [mục 2](#2-chay-lai-ui-va-side-effect-nam-o-au). Đây cũng là câu trả lời cho phần "Hỏi agent" ở mục 7, bạn có thể so với câu trả lời của agent.
+
+Chương trình dưới đây là màn hình m01 thu nhỏ: ba biến state, mỗi lần một biến **đổi giá trị** thì "framework" gọi `render()` và in ra màn hình đang trông thế nào. `Delegates.observable` là delegate có sẵn của Kotlin, chạy một lambda sau mỗi lần gán (cùng ý với `by` ở [A2](#a2-var-filter-by-remembersaveable-mutablestateof-oc-the-nao)).
+
+```kotlin title="A8.kt"
+import kotlinx.coroutines.*
+import kotlin.properties.Delegates
+
+val start = System.currentTimeMillis()
+fun t() = "t=%4d ms".format((System.currentTimeMillis() - start) / 100 * 100)
+
+// Ba mẩu state. Mỗi lần một mẩu đổi → "framework" gọi lại render().
+var filter by Delegates.observable("") { _, old, new -> if (old != new) render("filter đổi") }
+var isScanning by Delegates.observable(false) { _, old, new -> if (old != new) render("isScanning đổi") }
+var foundCount by Delegates.observable<Int?>(null) { _, old, new -> if (old != new) render("foundCount đổi") }
+
+val all = listOf("OBD-II Adapter", "Heart Rate Monitor", "Tire Pressure Sensor", "Thermometer", "Smart Scale")
+
+fun render(why: String) {
+    val button = if (isScanning) "[Scan tắt]" else "[Scan bật]"
+    val status = when {
+        isScanning -> "⟳ Scanning…"
+        foundCount == null -> "Tap Scan to look for devices."
+        foundCount == 0 -> "No devices found. (đỏ)"
+        else -> "Devices found: $foundCount"
+    }
+    println("${t()}  render ($why): ô lọc=\"$filter\" $button $status")
+}
+
+fun main() = runBlocking {
+    render("mở app")
+    filter = "sens"                             // người dùng gõ
+    // onScan: đổi state đồng bộ trước, rồi mới launch phần chậm
+    val query = filter
+    isScanning = true
+    foundCount = null                           // vốn đã null → không đổi → không render
+    launch {
+        delay(1_500)
+        foundCount = all.count { it.contains(query.trim(), ignoreCase = true) }
+        isScanning = false
+    }.join()
+}
+```
+
+```text title="Output"
+t=   0 ms  render (mở app): ô lọc="" [Scan bật] Tap Scan to look for devices.
+t=   0 ms  render (filter đổi): ô lọc="sens" [Scan bật] Tap Scan to look for devices.
+t=   0 ms  render (isScanning đổi): ô lọc="sens" [Scan tắt] ⟳ Scanning…
+t=1500 ms  render (foundCount đổi): ô lọc="sens" [Scan tắt] ⟳ Scanning…
+t=1500 ms  render (isScanning đổi): ô lọc="sens" [Scan bật] Devices found: 1
+```
+
+Đọc từng dòng:
+
+1. **Mở app:** state mặc định, nên màn hình mời bấm Scan.
+2. **Gõ "sens":** chỉ `filter` đổi. Dòng trạng thái vẫn như cũ, vì nó không phụ thuộc `filter` (chỉ lúc *bấm* mới đọc `filter`).
+3. **Bấm Scan:** `isScanning = true` làm nút tắt và vòng xoay hiện **ngay**, trước khi việc chậm bắt đầu. Vì vậy bấm đúp không mở được lần quét thứ hai (ý 5 ở mục 5). Dòng `foundCount = null` không render gì vì giá trị không đổi.
+4. **1,5 s sau, gán `foundCount = 1`:** state đã có kết quả nhưng `isScanning` vẫn `true`, nên màn hình vẫn "Scanning…". Đây là một trạng thái nửa vời.
+5. **Gán `isScanning = false`:** màn hình cuối cùng, "Devices found: 1".
+
+Dòng 4 chỉ có trong mô hình này. Compose và SwiftUI thật gom các thay đổi xảy ra liền nhau và vẽ lại một lần ở frame kế tiếp, nên người dùng chỉ thấy dòng 5. Ở track XML/UIKit, bạn tự làm việc "gom" đó: gán cả hai field rồi mới gọi `render()` **một lần**, như trong `scan()` của bài.
+
+Cùng hành trình đó trên bốn track:
+
+| Bước | Compose | XML | SwiftUI | UIKit |
+|---|---|---|---|---|
+| bấm nút gọi | lambda `onScan` | click listener → `scan(text)` | `Button(action: scan)` | `UIAction` → `scan()` |
+| chụp chuỗi lọc | `val query = filter` | đọc `filterInput.text` khi gọi `scan` | `let query = filter` | `let query = filterField.text ?? ""` |
+| đổi state ngay | `isScanning = true` | `isScanning = true` | `isScanning = true` | `isScanning = true` |
+| ai vẽ lại | Compose tự làm | bạn gọi `render()` | SwiftUI tự làm | bạn gọi `render()` |
+| việc chậm chạy ở | `scope.launch { delay }` | `lifecycleScope.launch { delay }` | `Task { Task.sleep }` | `Task { Task.sleep }` |
+| xong thì | gán state, Compose vẽ lại | gán field, gọi `render()` | gán state, SwiftUI vẽ lại | gán property, gọi `render()` |
+
+### A9. Xoay máy: vì sao Android quên việc đang chạy
+
+Giải thích thêm cho [mục 6](#6-cai-gi-song-sot-qua-cai-gi) và câu quiz thứ ba.
+
+Ví dụ đời thường: Activity như **một bàn ăn trong nhà hàng**. Xoay máy giống quản lý bắt dọn bàn cũ, kê một bàn mới y hệt.
+
+- **Saved state** (`rememberSaveable`, `Bundle`) là **tờ giấy ghi chú** bạn kịp chuyển sang bàn mới: món đã gọi, tên khách. Thứ gì có trên giấy thì còn.
+- **Coroutine scope** của màn hình là **người phục vụ của riêng bàn đó**. Dọn bàn thì người phục vụ cũng nghỉ, món đang đi lấy giữa chừng bị bỏ, và không ai báo cho khách.
+- `remember` thường là thứ để trên bàn mà không ghi lên giấy, nên mất khi dọn bàn.
+- **ViewModel** (bài 08) là **bếp**: không bị dọn khi đổi bàn, nên món đang nấu vẫn nấu tiếp.
+
+Chương trình dưới đây giả lập đúng m01 bản Compose: `filter` và `foundCount` được lưu (như `rememberSaveable`), `isScanning` thì không (như `remember`), và mỗi màn hình có scope riêng bị huỷ khi xoay.
+
+```kotlin title="A9.kt"
+import kotlinx.coroutines.*
+
+// "Bundle": tờ giấy Android giữ hộ qua lần xoay máy (rememberSaveable / onSaveInstanceState)
+class Bundle { val values = mutableMapOf<String, Any?>() }
+
+class FakeScreen(name: String, saved: Bundle?, private val parent: CoroutineScope) {
+    private val tag = "[$name]"
+    var filter: String = saved?.values?.get("filter") as String? ?: ""       // rememberSaveable
+    var foundCount: Int? = saved?.values?.get("foundCount") as Int?          // rememberSaveable
+    var isScanning = false                                                   // remember thường
+    private val scope = CoroutineScope(parent.coroutineContext + Job())      // rememberCoroutineScope / lifecycleScope
+
+    fun show() = println("$tag ô lọc=\"$filter\" isScanning=$isScanning foundCount=$foundCount")
+
+    fun onScan() {
+        val query = filter
+        isScanning = true; foundCount = null
+        show()
+        scope.launch {
+            try {
+                delay(1_500)
+                foundCount = if ("sensor".contains(query)) 1 else 0
+                isScanning = false
+                show()
+            } catch (e: CancellationException) {
+                println("$tag việc quét bị huỷ (người dùng không được báo gì)")
+                throw e
+            }
+        }
+    }
+
+    suspend fun destroy(): Bundle {                    // xoay máy: lưu những gì được phép lưu, rồi huỷ scope
+        val out = Bundle()
+        out.values["filter"] = filter
+        out.values["foundCount"] = foundCount
+        scope.coroutineContext.job.cancelAndJoin()
+        return out
+    }
+}
+
+fun main() = runBlocking {
+    println("— Lần 1: xoay máy khi kết quả đang hiện")
+    var screen = FakeScreen("màn hình A", null, this)
+    screen.filter = "sens"; screen.onScan()
+    delay(2_000)
+    screen = FakeScreen("màn hình B", screen.destroy(), this); screen.show()
+
+    println("— Lần 2: xoay máy TRONG LÚC quét")
+    screen.onScan()
+    delay(500)
+    screen = FakeScreen("màn hình C", screen.destroy(), this); screen.show()
+    delay(2_000)
+    println("— 2 giây sau: không ai đặt lại foundCount")
+    screen.show()
+}
+```
+
+```text title="Output"
+— Lần 1: xoay máy khi kết quả đang hiện
+[màn hình A] ô lọc="sens" isScanning=true foundCount=null
+[màn hình A] ô lọc="sens" isScanning=false foundCount=1
+[màn hình B] ô lọc="sens" isScanning=false foundCount=1
+— Lần 2: xoay máy TRONG LÚC quét
+[màn hình B] ô lọc="sens" isScanning=true foundCount=null
+[màn hình B] việc quét bị huỷ (người dùng không được báo gì)
+[màn hình C] ô lọc="sens" isScanning=false foundCount=null
+— 2 giây sau: không ai đặt lại foundCount
+[màn hình C] ô lọc="sens" isScanning=false foundCount=null
+```
+
+Khớp với bảng ở mục 6:
+
+- **Lần 1:** màn hình B nhận lại `filter` và `foundCount` từ "tờ giấy", nên vẫn hiện "Devices found: 1".
+- **Lần 2:** lúc bắt đầu quét, `foundCount` đã bị xoá về `null`, nên tờ giấy chỉ còn chữ lọc. Việc quét của B bị huỷ, và C bắt đầu với `isScanning=false, foundCount=null`, tức là "Tap Scan to look for devices.".
+- **Nếu lỡ lưu `isScanning`:** C sẽ có `isScanning=true` mà không còn coroutine nào đặt nó về `false`, nên vòng xoay quay mãi. Đó là lý do ý 3 ở mục 5 cố tình dùng `remember`.
+
+Vì sao iOS không bị? Xoay iPhone **không** tạo lại view hay view controller, chỉ sắp lại layout cho khổ ngang. `@State` và `Task` vẫn là của màn hình cũ, nên việc quét chạy xong bình thường.
+
+### A10. Bốn track, một bảng
+
+Gom các ý rải rác ở mục 2, 5 và 6 vào một chỗ để so.
+
+| Câu hỏi | Compose | XML | SwiftUI | UIKit |
+|---|---|---|---|---|
+| state nằm ở đâu? | `remember` / `rememberSaveable` trong `DeviceMonitorScreen` | field của `MainActivity` | `@State` trong `DeviceMonitorView` | property của view controller |
+| ai ghi vào widget? | Compose, sau mỗi lần state đổi | chỉ `render()` | SwiftUI, sau mỗi lần state đổi | chỉ `render()` |
+| quên cập nhật một widget được không? | không | được, nếu bỏ qua `render()` | không | được, nếu bỏ qua `render()` |
+| giữ qua xoay máy bằng | `rememberSaveable` | `onSaveInstanceState` + `Bundle` | không cần | không cần |
+| việc async chạy trong | `rememberCoroutineScope()` | `lifecycleScope` | `Task { }` | `Task { }` |
+| việc async bị huỷ khi | composable rời màn hình (kể cả xoay) | Activity bị huỷ (kể cả xoay) | không tự huỷ | không tự huỷ |
+| từ bài 08 đổi thành | ViewModel dùng chung giữ state và việc quét | như Compose | như Compose | như Compose |
+
+Mẹo nhớ: hai track **declarative** (Compose, SwiftUI) cho framework làm phần "vẽ lại", còn hai track **imperative** (XML, UIKit) bắt bạn tự làm, qua đúng một cửa là `render()`.
+Hai track **Android** phải lo chuyện xoay máy, còn hai track **iOS** thì không.
+
+### A11. `@State`, struct và `Task` nói đơn giản
+
+Giải thích thêm cho ý 1–2 (SwiftUI) và ý 2 (UIKit) ở mục 5.
+
+**Struct bị tạo lại liên tục, sao state không mất?** `DeviceMonitorView` là một `struct`, giống một **tờ phiếu in**: SwiftUI in lại tờ phiếu mỗi khi cần vẽ. Giá trị của `@State` không nằm trên tờ phiếu, mà nằm trong **ngăn kéo do SwiftUI giữ**. Tờ phiếu chỉ ghi "lấy giá trị ở ngăn kéo số 3".
+In lại bao nhiêu tờ thì ngăn kéo vẫn vậy. Đó là ý của Apple khi nói "SwiftUI quản lý vùng lưu trữ của property". So với Compose: ngăn kéo là `remember`, và `@State` gộp cả `remember { mutableStateOf(…) }` lẫn `by` vào một chữ.
+
+**Vì sao phải `private`?** Vì `@State` là của riêng view này. Muốn view con sửa được thì đưa `$filter` (một `Binding`, xem [A3](#a3-state-hoisting-va-binding-at-canh-react)), chứ không cho người ngoài đụng thẳng vào.
+
+**`Task { }` và main thread:** widget chỉ được sửa trên main thread, cả iOS lẫn Android. `View` và `UIViewController` đều là `@MainActor`, và `Task { }` tạo trong đó thừa hưởng điều này. Nên sau `await Task.sleep`, dòng `foundCount = …` vẫn chạy trên main thread mà bạn không phải viết `DispatchQueue.main.async`.
+Bên Kotlin cũng vậy: `rememberCoroutineScope()` và `lifecycleScope` mặc định chạy trên main thread, còn `delay` chỉ *tạm dừng* coroutine chứ không giữ thread (câu ôn xen kẽ cuối).
+
+**"Unstructured" nghĩa là gì ở đây?** Một `Task { }` không gắn với vòng đời màn hình, nên rời màn hình thì nó vẫn chạy tới hết. Với m01 chỉ có một màn hình thì vô hại. Từ bài 07 có màn hình thứ hai, và bài 08 đưa việc quét vào ViewModel để có người chịu trách nhiệm huỷ nó.
+
 ---
 
 ## Sau bài này tự làm được gì
@@ -1958,13 +2277,13 @@ Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 07.
 
 - [ ] Giải thích bằng lời của mình vì sao code imperative có *n × m* chỗ để quên, và chỉ ra hai bug của toy (xem [A1](#a1-hai-bug-cua-toy-chay-that-bang-kotlin)).
 - [ ] Nói được ba luật: UI là hàm của state, một nguồn sự thật, suy ra đừng lưu; và nhận ra một "bản sao được lưu" trong code.
-- [ ] Biết vì sao hàm UI không được có side effect, và đặt việc async đúng chỗ: callback (`onClick`, `Button(action:)`) hay effect gắn vòng đời (`LaunchedEffect`, `.task`).
+- [ ] Biết vì sao hàm UI không được có side effect, và đặt việc async đúng chỗ: callback (`onClick`, `Button(action:)`) hay effect gắn vòng đời (`LaunchedEffect`, `.task`) (xem [A7](#a7-side-effect-la-gi-va-vi-sao-ham-ui-khong-uoc-co)).
 - [ ] Viết `SampleDevices` trong `commonMain` và gọi nó từ cả hai phía (`SampleDevices.matching(…)` / `SampleDevices.shared.matching(filter:)`).
 - [ ] Gọi tên năm loại thành phần (chữ, ô nhập, nút, ảnh, tiến trình) trên track của mình, và dựng màn hình m01 bằng stack hoặc constraint (xem [A5](#a5-tu-vung-layout-cua-bon-toolkit-so-voi-css)).
 - [ ] Đọc được `var filter by rememberSaveable { mutableStateOf("") }` và chọn đúng giữa `remember` và `rememberSaveable` (xem [A2](#a2-var-filter-by-remembersaveable-mutablestateof-oc-the-nao)).
 - [ ] Tách một màn hình thành phần stateful và phần stateless (Compose), hoặc truyền giá trị / `$binding` xuống view con (SwiftUI) (xem [A3](#a3-state-hoisting-va-binding-at-canh-react)).
-- [ ] Trên track XML/UIKit, cho mọi thay đổi đi qua một hàm `render()` duy nhất.
+- [ ] Trên track XML/UIKit, cho mọi thay đổi đi qua một hàm `render()` duy nhất (xem [A8](#a8-hanh-trinh-cua-mot-lan-bam-scan-tung-buoc), [A10](#a10-bon-track-mot-bang)).
 - [ ] Chụp chuỗi lọc lúc bấm (`val query = filter`) và giải thích vì sao cần (xem [A4](#a4-vi-sao-phai-chup-val-query-filter-luc-bam)).
-- [ ] Đoán đúng chuyện gì xảy ra khi xoay máy lúc có kết quả và lúc đang quét, trên Android và iOS.
+- [ ] Đoán đúng chuyện gì xảy ra khi xoay máy lúc có kết quả và lúc đang quét, trên Android và iOS (xem [A9](#a9-xoay-may-vi-sao-android-quen-viec-ang-chay)).
 - [ ] Tránh được ba bất ngờ về layout: frame trên label, content hugging, chữ in hoa của nút AppCompat.
 - [ ] Làm xong 3 bài tự làm ở trên mà không cần agent.

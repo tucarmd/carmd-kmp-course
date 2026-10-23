@@ -75,6 +75,7 @@ extra_css:
 
 extra_javascript:
   - javascripts/quiz.js
+  - javascripts/phone-toy.js
 
 extra:
   social:
@@ -91,6 +92,8 @@ nav:
           - "3. Android cơ bản": lessons/03-android-co-ban.md
           - "4. iOS cơ bản": lessons/04-ios-co-ban.md
           - "5. Giải phẫu project KMP": lessons/05-giai-phau-project-kmp.md
+      - "Tuần 2":
+          - "6. UI declarative: thành phần": lessons/06-ui-declarative-thanh-phan.md
 
 validation:
   links:

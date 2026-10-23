@@ -82,3 +82,27 @@
 .md-typeset .quiz .why { display: none; margin: .3em 0 0; }
 .md-typeset .quiz.answered .why { display: block; }
 .md-typeset .kicker { font-size: .78rem; color: var(--dg-ink-soft); margin: -.4em 0 .6em; }
+
+/* ---- toy điện thoại mini (bài 06) và ảnh chụp màn hình — chép từ assets/style.css của khoá gốc ---- */
+.md-typeset .toy { border: 1px solid var(--dg-rule); border-radius: 6px; padding: 1rem 1.1rem; margin: 1.25rem 0; background: var(--dg-card); }
+.md-typeset .toy-controls { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .9rem; }
+.md-typeset .toy-controls button { font: inherit; font-size: .78rem; padding: .35rem .75rem; border: 1px solid var(--dg-accent); background: transparent; color: var(--dg-accent); border-radius: 4px; cursor: pointer; }
+.md-typeset .toy-controls button:hover { background: var(--c-ios-soft); }
+.md-typeset .toy-phones { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; }
+.md-typeset .toy-phones figure { margin: 0; max-width: none; }
+.md-typeset .toy-phones figcaption { font-family: var(--md-code-font-family); font-size: .68rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dg-ink-soft); margin: 0 0 .35rem; max-width: none; text-align: left; }
+.md-typeset .phone { border: 2px solid var(--dg-ink-soft); border-radius: 18px; padding: .9rem .8rem 1.1rem; background: var(--dg-card); color: var(--dg-ink); min-height: 13.5rem; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: .8rem; }
+.md-typeset .phone .p-title { font-weight: 600; font-size: .92rem; margin-bottom: .5rem; }
+.md-typeset .phone .p-btn { display: block; width: 100%; padding: .3rem; border-radius: 999px; background: var(--dg-accent); color: var(--dg-card); font-size: .78rem; text-align: center; }
+.md-typeset .phone .p-btn.off { background: var(--dg-rule); color: var(--dg-ink-soft); }
+.md-typeset .phone .p-status { margin: .55rem 0 .4rem; min-height: 1.2em; display: flex; align-items: center; gap: .4rem; }
+.md-typeset .phone .p-status.err { color: var(--dg-err); }
+.md-typeset .phone .p-spin { width: .8rem; height: .8rem; border: 2px solid var(--dg-rule); border-top-color: var(--dg-accent); border-radius: 50%; animation: p-spin .8s linear infinite; }
+.md-typeset .phone .p-row { border-bottom: 1px solid var(--dg-rule); padding: .25rem 0; }
+@keyframes p-spin { to { transform: rotate(360deg); } }
+.md-typeset .toy pre.toy-state { margin: .9rem 0 0; font-size: .72em; white-space: pre-wrap; }
+@media (prefers-reduced-motion: reduce) { .md-typeset .phone .p-spin { animation: none; } }
+.md-typeset .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .75rem; margin: 1rem 0 1.5rem; }
+.md-typeset .shots figure { margin: 0; max-width: none; }
+.md-typeset .shots img { width: 100%; height: auto; border: 1px solid var(--dg-rule); border-radius: 10px; display: block; }
+.md-typeset .shots figcaption { font-family: var(--md-code-font-family); font-size: .66rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dg-ink-soft); margin-top: .3rem; max-width: none; }

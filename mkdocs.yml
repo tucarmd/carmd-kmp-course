@@ -94,6 +94,7 @@ nav:
           - "5. Giải phẫu project KMP": lessons/05-giai-phau-project-kmp.md
       - "Tuần 2":
           - "6. UI declarative: thành phần": lessons/06-ui-declarative-thanh-phan.md
+          - "7. UI declarative: danh sách": lessons/07-ui-declarative-danh-sach.md
 
 validation:
   links:

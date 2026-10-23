@@ -191,3 +191,23 @@
 .md-typeset ul.lab-verdicts li.warn { color: var(--c-ios); }
 @media (prefers-reduced-motion: reduce) { .md-typeset .lab-phone, .md-typeset .lab-chip { transition: none; } }
 @media (max-width: 40em) { .md-typeset .lab-ruler { grid-template-columns: repeat(9, 1fr); } }
+
+/* ---- mô phỏng bài 09 (không có trong bản gốc) ---- */
+.md-typeset .lab pre.lab-code { margin: 0; font-size: .64rem; white-space: pre-wrap; padding: .5rem .6rem; min-height: 9rem; }
+.md-typeset .lab-note.err { color: var(--dg-err); }
+.md-typeset .lab-note.warn { color: var(--c-ios); }
+.md-typeset .lab button.active { background: var(--c-android); color: var(--dg-card); }
+.md-typeset .lab-gate { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .8rem 0 .2rem; font-family: var(--md-code-font-family); font-size: .74rem; }
+.md-typeset .lab-gate-box { border: 2px solid var(--dg-rule); border-radius: 6px; padding: .3rem .6rem; }
+.md-typeset .lab-gate.open .lab-gate-box { border-color: var(--dg-ok); }
+.md-typeset .lab-gate.closed .lab-gate-box:nth-child(3) { border-color: var(--dg-err); color: var(--dg-err); }
+.md-typeset .lab-gate.closed .lab-gate-arrow { color: var(--dg-err); font-weight: 700; }
+.md-typeset .lab-gate.off .lab-gate-box:nth-child(3) { border-style: dashed; opacity: .5; }
+.md-typeset .lab-gate-box.dim { opacity: .3; }
+.md-typeset .lab-lanes { display: flex; flex-direction: column; gap: .35rem; }
+.md-typeset .lab-lane { display: flex; gap: .8rem; align-items: baseline; border: 1px solid var(--dg-rule); border-left: 5px solid var(--dg-rule); border-radius: 4px; padding: .35rem .6rem; opacity: .55; transition: all .2s; }
+.md-typeset .lab-lane b { min-width: 11rem; font-size: .74rem; }
+.md-typeset .lab-lane.on { opacity: 1; border-left-color: var(--c-ios); background: var(--c-ios-soft); }
+.md-typeset .lab-lane:last-child.on { border-left-color: var(--c-inbound); background: var(--c-inbound-soft); }
+.md-typeset pre.lab-log.short { height: 7rem; margin-top: .7rem; }
+@media (max-width: 40em) { .md-typeset .lab-lane { flex-direction: column; gap: .1rem; } }

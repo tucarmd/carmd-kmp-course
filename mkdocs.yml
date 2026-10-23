@@ -77,6 +77,7 @@ extra_javascript:
   - javascripts/quiz.js
   - javascripts/phone-toy.js
   - javascripts/lesson03-labs.js
+  - javascripts/lesson09-labs.js
 
 extra:
   social:
@@ -97,6 +98,7 @@ nav:
           - "6. UI declarative: thành phần": lessons/06-ui-declarative-thanh-phan.md
           - "7. UI declarative: danh sách": lessons/07-ui-declarative-danh-sach.md
           - "8. ViewModel dùng chung": lessons/08-viewmodel-dung-chung.md
+          - "9. Kotlin↔Swift với SKIE": lessons/09-kotlin-swift-voi-skie.md
 
 validation:
   links:

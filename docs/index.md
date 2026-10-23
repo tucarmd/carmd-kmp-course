@@ -35,3 +35,4 @@ Màn hình viết native (Compose trên Android, SwiftUI trên iOS). Phần còn
 | [06 · UI declarative: thành phần, state, layout](lessons/06-ui-declarative-thanh-phan.md) · m01 | |
 | [07 · UI declarative: danh sách, bất đồng bộ, điều hướng](lessons/07-ui-declarative-danh-sach.md) · m02 | |
 | [08 · ViewModel dùng chung](lessons/08-viewmodel-dung-chung.md) · m03 | |
+| [09 · Kotlin↔Swift với SKIE](lessons/09-kotlin-swift-voi-skie.md) · m04 | |

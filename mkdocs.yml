@@ -89,6 +89,7 @@ nav:
           - "1. Kotlin cho dev TypeScript": lessons/01-kotlin-cho-dev-typescript.md
           - "2. Swift cho dev TypeScript": lessons/02-swift-cho-dev-typescript.md
           - "3. Android cơ bản": lessons/03-android-co-ban.md
+          - "4. iOS cơ bản": lessons/04-ios-co-ban.md
 
 validation:
   links:

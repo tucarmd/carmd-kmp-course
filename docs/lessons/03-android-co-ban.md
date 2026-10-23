@@ -873,7 +873,7 @@ Mọi file bài này tạo ra, đầy đủ. Mở một file để đối chiế
 ## Appendix
 
 Phần này **không có trong bản gốc**. Đây là giải thích thêm cho những chỗ khó hiểu của bài.
-Code Android trong phần này chỉ để minh hoạ, không kèm output. Ví dụ Kotlin có output (A5) là chương trình console đã chạy thật (Kotlin 2.4.21, JVM 17).
+Code Android trong phần này chỉ để minh hoạ, không kèm output. Ví dụ Kotlin có output (A5, A9) là chương trình console đã chạy thật (Kotlin 2.4.21, JVM 17). Log Logcat ở A7 và A10 đo thật bằng app của bài trên emulator Android 14.
 
 ### A1. Các file Gradle, nhìn bằng mắt dev npm
 
@@ -1028,6 +1028,323 @@ after: field taps=1  conn=null  holder taps=3
 
 Bên web: field trong Activity ≈ biến trong component; Bundle ≈ `sessionStorage`; ViewModel ≈ store (Redux/Zustand) sống ngoài component.
 
+### A6. Vòng đời là chuyện một quán cà phê
+
+Giải thích thêm cho [mục 3](#3-vong-oi-activity-ghi-ra-log). Nếu chỉ nhớ được một mục trong Appendix về vòng đời, hãy nhớ mục này.
+
+Hình dung Activity là **một quán cà phê**, còn hệ điều hành là **ông chủ** quyết định lúc nào mở, lúc nào đóng. Quán không tự quyết; nó chỉ được *báo* qua từng callback.
+
+| Callback | Ở quán cà phê | Trạng thái sau callback |
+|---|---|---|
+| `onCreate` | Xây quán, kê bàn ghế, treo menu (làm **một lần**) | tồn tại, chưa ai thấy |
+| `onStart` | Kéo cửa cuốn lên: người đi đường **nhìn thấy** quán | nhìn thấy được |
+| `onResume` | Mở quầy, bắt đầu **nhận order** | ở phía trước, tương tác được |
+| `onPause` | Đóng quầy tạm (có xe đỗ chắn trước cửa). Trên điện thoại: bảng chia sẻ trồi lên che nửa màn hình (A7) | vẫn thấy, nhưng không nhận order |
+| `onStop` | Kéo cửa cuốn xuống, đi về. Quán **vẫn còn đó** | không ai thấy, nhưng còn tồn tại |
+| `onDestroy` | Dỡ quán | hết |
+
+**Quy tắc quan trọng nhất: callback đi theo cặp đối xứng, lồng vào nhau như búp bê Nga.**
+
+```text
+onCreate ┌──────────────────── tồn tại ────────────────────┐ onDestroy
+ onStart   ┌────────────── nhìn thấy được ──────────────┐   onStop
+  onResume   ┌──────── tương tác được ────────┐   onPause
+```
+
+- Muốn vào lớp trong cùng (tương tác được), phải đi qua mọi lớp ngoài: **luôn** `onCreate → onStart → onResume`, không bao giờ nhảy cóc.
+- Đi ra cũng vậy, theo thứ tự ngược: **luôn** `onPause → onStop → onDestroy`.
+- Ra tới lớp nào thì vào lại từ lớp đó. Home chỉ ra tới `onStop`, nên mở lại chỉ cần `onStart → onResume`: quán không xây lại.
+
+!!! abstract "Một câu để nhớ"
+    **Mở ở callback nào thì đóng ở callback đối xứng của nó**: `onCreate` ↔ `onDestroy`, `onStart` ↔ `onStop`, `onResume` ↔ `onPause`.
+
+### A7. Đo thật trên emulator: thêm các tình huống ngoài bài
+
+Giải thích thêm cho [mục 4](#4-thuc-te-xay-ra-gi). Bảng ở mục 4 chỉ có sáu thao tác. Dưới đây là log **đo thật** bằng đúng app của bài (track Compose, file ở mục [File đầy đủ](#file-ay-u)) trên emulator Pixel 8 Android 14 (API 34), mỗi tình huống chạy bằng một lệnh `adb` để bạn tự lặp lại được.
+
+| Bạn làm | Lệnh adb để tự thử | Logcat hiện | Vì sao |
+|---|---|---|---|
+| Kéo thanh thông báo xuống | `adb shell cmd statusbar expand-notifications` | *(không có gì)* | App vẫn nằm phía sau, vẫn là Activity ở trên cùng |
+| Mở Quick Settings | `adb shell cmd statusbar expand-settings` | *(không có gì)* | Giống trên |
+| Bảng chia sẻ (share sheet) trồi lên che nửa dưới | `adb shell am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT hi` | chỉ `onPause` | App **vẫn nhìn thấy** phía sau (bị làm mờ) nhưng không chạm được: đứng giữa hai lớp |
+| Đóng bảng chia sẻ (Back) | `adb shell input keyevent KEYCODE_BACK` | chỉ `onResume` | Quay lại lớp trong cùng, không cần `onStart` |
+| Bấm nút nguồn (khoá máy) | `adb shell input keyevent KEYCODE_SLEEP` | `onPause · onStop` | Màn hình tắt = không ai nhìn thấy, y như Home |
+| Mở khoá lại | `adb shell input keyevent KEYCODE_WAKEUP` rồi `adb shell wm dismiss-keyguard` | `onStart · onResume` | Cùng instance quay lại |
+| Bật / tắt dark mode | `adb shell cmd uimode night yes` | `onPause · onStop · onDestroy (changingConfigurations=true) · onCreate (restored=true) · onStart · onResume` | Đổi cấu hình, **y như xoay máy** |
+| Đổi cỡ chữ hệ thống | `adb shell settings put system font_scale 1.3` | giống dark mode | Đổi cấu hình |
+| Xoay máy | `adb shell wm user-rotation lock 1` | giống dark mode | Đổi cấu hình |
+| Home, rồi **hệ điều hành kill tiến trình** (thiếu RAM) | `adb shell input keyevent KEYCODE_HOME` rồi `adb shell am kill com.example.lesson03` | Home: `onPause · onStop`. Lúc kill: ***không có gì***, **không có `onDestroy`** | Tiến trình bị giết thẳng, không ai kịp gọi callback |
+| Mở lại sau khi bị kill | bấm icon app | `onCreate (restored=true) · onStart · onResume` | Tiến trình mới, nhưng hệ điều hành trả lại Bundle đã cất |
+| Buộc dừng (Settings → Force stop) khi app đang mở | `adb shell am force-stop com.example.lesson03` | *(không có gì)* | Cũng giết thẳng, không callback |
+| Mở lại sau Force stop | bấm icon app | `onCreate (restored=false) · onStart · onResume` | Force stop xoá luôn state đã cất, bắt đầu lạnh |
+
+Xem log trong terminal thay vì Android Studio: `adb logcat -s Lifecycle:D` (giữ cửa sổ này mở trong lúc thử).
+
+Ba bài học rút ra từ bảng:
+
+1. **`onDestroy` không chắc được gọi.** Khi app ở nền, hệ điều hành có thể giết tiến trình mà không báo gì. Đừng bao giờ đợi tới `onDestroy` mới lưu thứ quan trọng (bản nháp, cài đặt); hãy lưu ở `onPause` / `onStop`, hai callback mà app ở nền chắc chắn đã đi qua.
+2. **`restored=true` không có nghĩa là "cùng tiến trình".** Sau xoay máy hay sau khi bị kill nền, đều là `restored=true`. Field trong Activity và trong ViewModel đều mất khi tiến trình chết, chỉ Bundle (`savedInstanceState`) còn (xem bảng ở [A5](#a5-vi-sao-xoay-may-lam-mat-field)).
+3. **Không phải mọi thứ che lên app đều làm nó pause.** Thanh thông báo không gây callback nào. Còn màn Recents (đa nhiệm) thì tuỳ máy và tuỳ bản Android: trên emulator này, mở Recents bằng `adb shell input keyevent KEYCODE_APP_SWITCH` không gây callback nào. Đừng xây logic dựa vào việc Recents phải gọi `onPause`; hãy tự đo trên máy của bạn.
+
+!!! tip "Áp vào app"
+    Dark mode và cỡ chữ là hai thứ người dùng thật đổi thường xuyên, nhiều hơn xoay máy. Nếu Native Device Monitor giữ danh sách thiết bị trong field của Activity, chỉ cần người dùng bật dark mode lúc 6 giờ tối là danh sách biến mất. Đó là lý do bài 08 đưa state vào ViewModel.
+
+### A8. Mở ở đâu, đóng ở đâu: ví dụ áp vào app
+
+Giải thích thêm cho quy tắc cặp đối xứng ở [A6](#a6-vong-oi-la-chuyen-mot-quan-ca-phe).
+
+Câu hỏi đúng khi cầm một việc trong tay không phải "đặt ở callback nào?" mà là **"việc này cần sống trong khoảng nào?"**: tồn tại, nhìn thấy được, hay tương tác được. Chọn khoảng rồi, mở ở đầu khoảng và đóng ở cuối khoảng.
+
+| Việc | Cần sống khi | Mở ở | Đóng ở | Quên đóng thì sao |
+|---|---|---|---|---|
+| Dựng UI (`setContent { }`) | Activity tồn tại | `onCreate` | (tự dọn) | — |
+| Cập nhật vạch sóng RSSI mỗi giây | người dùng đang nhìn và chạm được | `onResume` | `onPause` | Tốn pin khi app đã ở nền |
+| Camera preview | đang ở phía trước | `onResume` | `onPause` | App khác không mở được camera |
+| Lắng nghe trạng thái Bluetooth bật/tắt để đổi chữ trên màn hình | màn hình nhìn thấy được | `onStart` | `onStop` | Cập nhật UI không ai thấy, có thể rò bộ nhớ |
+| Lưu chữ người dùng đang gõ dở | trước khi có thể bị kill | `onPause` hoặc `onStop` | — | Mất bản nháp khi bị kill nền (A7) |
+| Kết nối BLE tới thiết bị | **lâu hơn một màn hình** | không phải Activity | không phải Activity | Đứt kết nối mỗi lần xoay máy |
+
+Ví dụ minh hoạ (không phải code của bài) cho dòng RSSI, viết theo kiểu callback của bài:
+
+```kotlin
+private var ticker: Job? = null
+
+override fun onResume() {
+    super.onResume()
+    ticker = lifecycleScope.launch {          // bắt đầu khi tương tác được
+        while (isActive) { refreshRssi(); delay(1_000) }
+    }
+}
+
+override fun onPause() {
+    ticker?.cancel()                          // dừng ở callback đối xứng
+    ticker = null
+    super.onPause()
+}
+```
+
+Tìm cặp: `launch` ở `onResume`, `cancel` ở `onPause`. Mỗi lần bạn viết code mở một thứ trong một callback, hãy tự hỏi ngay "callback đối xứng của nó đâu?".
+
+!!! info "Sau này bạn ít viết override hơn"
+    Trong code Compose hiện đại, thay vì override từng callback, người ta dùng các API "lifecycle-aware" (tự biết vòng đời) để đăng ký một việc với đúng một khoảng. Ý tưởng vẫn y hệt: chọn khoảng, mở ở đầu, đóng ở cuối. Khoá dùng cách này từ bài 08.
+
+### A9. Mô phỏng vòng đời bằng chương trình console
+
+Giải thích thêm cho [mục 4](#4-thuc-te-xay-ra-gi) và [A7](#a7-o-that-tren-emulator-them-cac-tinh-huong-ngoai-bai).
+
+Chương trình dưới đây **không phải code Android**. Nó giả lập hệ điều hành đẩy một Activity lên/xuống qua các trạng thái, mỗi bậc gọi đúng một callback, và đánh số mỗi **instance** (`#1`, `#2`…) để bạn thấy lúc nào là cùng một object, lúc nào là object mới. Output của nó khớp với log đo thật trên emulator ở mục 4 và A7.
+
+```kotlin
+enum class State { NONE, CREATED, STARTED, RESUMED }
+
+class FakeActivity(private val id: Int, private val restored: Boolean) {
+    var state = State.NONE
+        private set
+
+    private fun log(msg: String) = println("  #$id $msg")
+
+    // Đi từng bậc lên/xuống, mỗi bậc gọi đúng một callback
+    fun moveTo(target: State, changingConfigurations: Boolean = false) {
+        while (state < target) {
+            state = State.entries[state.ordinal + 1]
+            when (state) {
+                State.CREATED -> log("onCreate (restored=$restored)")
+                State.STARTED -> log("onStart")
+                State.RESUMED -> log("onResume")
+                State.NONE -> Unit
+            }
+        }
+        while (state > target) {
+            when (state) {
+                State.RESUMED -> log("onPause")
+                State.STARTED -> log("onStop")
+                State.CREATED -> log("onDestroy (changingConfigurations=$changingConfigurations)")
+                State.NONE -> Unit
+            }
+            state = State.entries[state.ordinal - 1]
+        }
+    }
+}
+
+class Phone {
+    private var nextId = 1
+    private var activity: FakeActivity? = null
+    private var hasSavedState = false
+
+    private fun step(title: String, action: () -> Unit) {
+        println("== $title ==")
+        action()
+    }
+
+    private fun newActivity(restored: Boolean) =
+        FakeActivity(nextId++, restored).also { activity = it }
+
+    fun open() = step("Mở app") {
+        val current = activity
+        if (current == null) newActivity(restored = hasSavedState).moveTo(State.RESUMED)
+        else current.moveTo(State.RESUMED)
+    }
+
+    fun home() = step("Bấm Home") { activity?.moveTo(State.CREATED) }
+
+    fun rotate() = step("Xoay máy") {
+        activity?.moveTo(State.NONE, changingConfigurations = true)
+        newActivity(restored = true).moveTo(State.RESUMED)
+    }
+
+    fun killInBackground() = step("Hệ điều hành kill tiến trình (app đang ở nền)") {
+        println("  (không callback nào: tiến trình chết luôn)")
+        activity = null
+        hasSavedState = true
+    }
+
+    fun back() = step("Bấm Back") {
+        activity?.moveTo(State.NONE)
+        activity = null
+        hasSavedState = false
+    }
+}
+
+fun main() {
+    val phone = Phone()
+    phone.open()
+    phone.home()
+    phone.open()
+    phone.rotate()
+    phone.home()
+    phone.killInBackground()
+    phone.open()
+    phone.back()
+    phone.open()
+}
+```
+
+Output (Kotlin 2.4.21, JVM 17):
+
+```text
+== Mở app ==
+  #1 onCreate (restored=false)
+  #1 onStart
+  #1 onResume
+== Bấm Home ==
+  #1 onPause
+  #1 onStop
+== Mở app ==
+  #1 onStart
+  #1 onResume
+== Xoay máy ==
+  #1 onPause
+  #1 onStop
+  #1 onDestroy (changingConfigurations=true)
+  #2 onCreate (restored=true)
+  #2 onStart
+  #2 onResume
+== Bấm Home ==
+  #2 onPause
+  #2 onStop
+== Hệ điều hành kill tiến trình (app đang ở nền) ==
+  (không callback nào: tiến trình chết luôn)
+== Mở app ==
+  #3 onCreate (restored=true)
+  #3 onStart
+  #3 onResume
+== Bấm Back ==
+  #3 onPause
+  #3 onStop
+  #3 onDestroy (changingConfigurations=false)
+== Mở app ==
+  #4 onCreate (restored=false)
+  #4 onStart
+  #4 onResume
+```
+
+Cách đọc:
+
+- **Đếm số `#`**: chín thao tác nhưng chỉ có bốn instance. Home rồi mở lại vẫn là `#1`; xoay máy sinh `#2`; kill nền sinh `#3`; Back rồi mở sinh `#4`.
+- Mọi field bạn cất trong `#1` không tồn tại trong `#2`. Đó chính là [gotcha xoay máy](#4-thuc-te-xay-ra-gi), nhìn bằng con số.
+- `moveTo` đi **từng bậc** một: không có đường nào từ `RESUMED` xuống thẳng `NONE` mà bỏ qua `onPause`, `onStop`. Đó là quy tắc búp bê Nga của [A6](#a6-vong-oi-la-chuyen-mot-quan-ca-phe).
+
+Bản giả lập này cố ý chỉ in sáu callback giống app của bài. `onRestart` để dành cho bài tự làm: sau khi thêm nó vào app thật, hãy tự đoán nó sẽ chen vào chỗ nào trong output trên rồi so với Logcat.
+
+### A10. Đoán log trước, xem đáp án sau
+
+Luyện cho mục "Đoán đúng Logcat" trong checklist cuối trang. Đọc tình huống, tự viết ra log, rồi mới mở đáp án. Tất cả đáp án đều lấy từ log đo thật ở mục 4 và A7.
+
+??? question "1. App đang mở. Bạn kéo thanh thông báo xuống đọc tin nhắn, rồi kéo lên."
+    **Không có dòng log nào.** Thanh thông báo nằm đè lên nhưng app vẫn là Activity ở trên cùng, nên hệ điều hành không gọi `onPause`.
+
+??? question "2. App đang mở. Bạn bấm nút nguồn tắt màn hình, rồi mở khoá lại."
+    Tắt màn hình: `onPause · onStop`. Mở khoá: `onStart · onResume`.
+    Cùng một instance, không có `onCreate` lần hai, giống Home rồi mở lại.
+
+??? question "3. App đang mở. Bạn vào Quick Settings bật dark mode."
+    `onPause · onStop · onDestroy (changingConfigurations=true) · onCreate (restored=true) · onStart · onResume`.
+    Dark mode là thay đổi cấu hình, xử lý y như xoay máy: instance cũ bị huỷ, instance mới được tạo.
+
+??? question "4. Bạn bấm Home, đi chơi game nặng 30 phút. Hệ điều hành thiếu RAM nên giết tiến trình app. Bạn bấm icon mở lại. Có `onDestroy` không? Dòng `onCreate` ghi gì?"
+    **Không có `onDestroy`.** Lúc bị giết, log im lặng hoàn toàn.
+    Khi mở lại: `onCreate (restored=true) · onStart · onResume`. `restored=true` vì hệ điều hành đã cất Bundle trước khi giết tiến trình, dù đây là một tiến trình hoàn toàn mới.
+
+??? question "5. Bạn muốn lưu chữ người dùng gõ dở. Đặt code lưu vào `onDestroy` có ổn không?"
+    **Không.** Câu 4 cho thấy `onDestroy` có thể không bao giờ chạy. Lưu ở `onPause` hoặc `onStop`, hai callback app luôn đi qua trước khi rời màn hình.
+
+??? question "6. Một bạn viết code bắt đầu quét BLE trong `onStart` và dừng quét trong `onPause`. Có vấn đề gì?"
+    Hai callback **không phải một cặp đối xứng**. Với Home thì tình cờ vẫn chạy đúng (`onPause` dừng, `onStart` bật lại). Nhưng mở bảng chia sẻ rồi đóng lại chỉ gây `onPause` rồi `onResume`, không có `onStart` (A7), nên quét đã dừng mà không ai bật lại.
+    Sửa: `onStart` ↔ `onStop`, hoặc `onResume` ↔ `onPause` (xem [A8](#a8-mo-o-au-ong-o-au-vi-du-ap-vao-app)).
+
+### A11. Đọc nhanh: callback nào, nhớ gì
+
+Bảng tóm tắt để ghim lại, gom từ A4 tới A10.
+
+| Callback | Được gọi khi | Thường làm gì | Nhớ |
+|---|---|---|---|
+| `onCreate` | instance mới | dựng UI, đọc `savedInstanceState` | Chạy lại sau xoay máy, dark mode, cỡ chữ, kill nền |
+| `onStart` | bắt đầu nhìn thấy | bắt đầu thứ chỉ cần khi nhìn thấy | Cặp với `onStop` |
+| `onResume` | tương tác được | bật thứ chỉ cần khi đang dùng (RSSI, camera) | Cặp với `onPause` |
+| `onPause` | mất quyền tương tác | tắt thứ đã bật ở `onResume`, lưu nhanh | Phải nhanh: màn hình kế tiếp chờ nó |
+| `onStop` | không còn nhìn thấy | tắt thứ đã bật ở `onStart`, lưu dữ liệu | Callback cuối **chắc chắn** chạy trước khi app có thể bị kill |
+| `onDestroy` | instance bị huỷ | dọn dẹp cuối | **Có thể không chạy**; đọc `isChangingConfigurations` để biết vì sao chết |
+
+
+### A12. Phòng thí nghiệm: bấm để thấy Android chạy
+
+Bốn mô phỏng bấm được, mỗi cái ứng với một nhóm mục trong checklist bên dưới. Chúng là **mô hình** dựng theo đúng log đo thật ở [mục 4](#4-thuc-te-xay-ra-gi), [A7](#a7-o-that-tren-emulator-them-cac-tinh-huong-ngoai-bai) và [A10](#a10-oan-log-truoc-xem-ap-an-sau), không phải Android thật. Chạy app của bài trên emulator vẫn là cách kiểm chứng cuối cùng.
+
+#### 1. Vòng đời: bấm thao tác, xem callback chạy
+
+Bấm icon app, bấm **+1 tap** vài lần, rồi thử lần lượt Home, xoay máy, dark mode, giết app ở nền, Back. Nhìn ba chỗ cùng lúc:
+
+- **Điện thoại**: instance số mấy, và ba bộ đếm. *field* là biến trong Activity, *Bundle* là thứ cất ở `onSaveInstanceState`, *ViewModel* là thứ sống ngoài Activity (bài 08).
+- **Ba vùng lồng nhau**: tồn tại ⊃ nhìn thấy ⊃ tương tác, giống búp bê Nga ở [A6](#a6-vong-oi-la-chuyen-mot-quan-ca-phe). Callback đang chạy sáng lên ở hàng chip bên dưới.
+- **Logcat**: đúng các dòng app của bài sẽ in.
+
+<div class="lab" id="l03-life-lab"></div>
+
+!!! tip "Thử ba thí nghiệm này"
+    1. **Home rồi mở lại** và **Xoay máy**: cùng là "rời màn hình rồi quay lại", nhưng chỉ xoay máy làm số instance tăng và *field taps* về 0.
+    2. Bấm Home, rồi **Hệ thống giết app ở nền**, rồi bấm icon: không có `onDestroy`, `onCreate` ghi `restored=true`, *Bundle* còn nhưng *ViewModel* mất.
+    3. **Back**: mọi bộ đếm về 0. Đó là kết thúc thật, khác hẳn Home.
+
+#### 2. Game ghép log
+
+Đọc tình huống, bấm các callback theo đúng thứ tự Logcat sẽ in, rồi bấm **Kiểm tra**. Không bấm gì nghĩa là "không có dòng log nào". Bản này chỉ tính 6 callback mà app của bài ghi log (không có `onRestart`).
+
+<div class="lab" id="l03-log-game"></div>
+
+#### 3. Intent này mở Activity nào?
+
+Mỗi lượt là một Intent. Bấm vào Activity mà hệ điều hành sẽ mở, hoặc ô cuối nếu không ai mở được. Các ô hiện đúng thứ manifest của mỗi app khai báo: intent filter và `exported`. Đáp án giải thích vì sao khớp hay không khớp ([A3](#a3-explicit-va-implicit-intent)).
+
+<div class="lab" id="l03-intent-game"></div>
+
+#### 4. Thước SDK: kéo máy người dùng qua các đời Android
+
+Đổi ba con số của `build.gradle.kts` và kéo thanh "Máy người dùng". Vạch đỏ là đời Android không cài được app. Bỏ tick ô `SDK_INT` để xem chuyện gì xảy ra khi gọi một API mới trên máy cũ ([A2](#a2-ba-con-so-sdk-nhin-thay-cai-uoc-chay-theo)).
+
+<div class="lab" id="l03-sdk-lab"></div>
+
+API "có từ API 37" trong mô phỏng này là giả định, chỉ để minh hoạ quy tắc; tên lỗi `INSTALL_FAILED_OLDER_SDK` và `NoSuchMethodError` là lỗi Android thật cho hai trường hợp đó.
+
 ---
 
 ## Sau bài này tự làm được gì
@@ -1036,13 +1353,14 @@ Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 04.
 
 - [ ] Nói được mỗi file trong project Android làm gì, và so được với một monorepo npm (xem [A1](#a1-cac-file-gradle-nhin-bang-mat-dev-npm)).
 - [ ] Biết vì sao **không** thêm plugin `org.jetbrains.kotlin.android` khi dùng AGP 9.
-- [ ] Phân biệt `compileSdk`, `minSdk`, `targetSdk` (xem [A2](#a2-ba-con-so-sdk-nhin-thay-cai-uoc-chay-theo)).
-- [ ] Giải thích Activity, Context, Intent, Manifest bằng lời của mình; phân biệt explicit và implicit intent (xem [A3](#a3-explicit-va-implicit-intent)).
+- [ ] Phân biệt `compileSdk`, `minSdk`, `targetSdk` (xem [A2](#a2-ba-con-so-sdk-nhin-thay-cai-uoc-chay-theo), thử [thước SDK](#4-thuoc-sdk-keo-may-nguoi-dung-qua-cac-oi-android)).
+- [ ] Giải thích Activity, Context, Intent, Manifest bằng lời của mình; phân biệt explicit và implicit intent (xem [A3](#a3-explicit-va-implicit-intent), chơi [Intent này mở Activity nào?](#3-intent-nay-mo-activity-nao)).
 - [ ] Biết intent filter `MAIN` + `LAUNCHER` và `android:exported="true"` để làm gì.
-- [ ] Kể đúng thứ tự sáu callback vòng đời và khoảng "tồn tại / nhìn thấy / tương tác được" của chúng (xem [A4](#a4-vong-oi-activity-so-voi-mot-tab-trinh-duyet)).
-- [ ] Đoán đúng Logcat cho: mở app, Home, mở lại, xoay máy, mở trang web, Back.
+- [ ] Kể đúng thứ tự sáu callback vòng đời và khoảng "tồn tại / nhìn thấy / tương tác được" của chúng (xem [A4](#a4-vong-oi-activity-so-voi-mot-tab-trinh-duyet), [A6](#a6-vong-oi-la-chuyen-mot-quan-ca-phe)).
+- [ ] Đoán đúng Logcat cho: mở app, Home, mở lại, xoay máy, mở trang web, Back (luyện thêm ở [A10](#a10-oan-log-truoc-xem-ap-an-sau) và [game ghép log](#2-game-ghep-log)).
+- [ ] Biết `onDestroy` có thể không chạy, và chọn đúng cặp callback để mở / đóng một việc (xem [A7](#a7-o-that-tren-emulator-them-cac-tinh-huong-ngoai-bai), [A8](#a8-mo-o-au-ong-o-au-vi-du-ap-vao-app)).
 - [ ] Đọc được `restored=` và `changingConfigurations=` trong log để biết Activity đang được tạo lại hay kết thúc thật.
-- [ ] Giải thích vì sao kết nối BLE hay state màn hình không được giữ trong Activity (xem [A5](#a5-vi-sao-xoay-may-lam-mat-field)).
+- [ ] Giải thích vì sao kết nối BLE hay state màn hình không được giữ trong Activity (xem [A5](#a5-vi-sao-xoay-may-lam-mat-field), thử ba bộ đếm trong [phòng thí nghiệm vòng đời](#1-vong-oi-bam-thao-tac-xem-callback-chay)).
 - [ ] Chỉ ra chỗ khác nhau giữa track Compose và track XML (chỉ phần đưa UI lên màn hình).
 - [ ] Đọc hiểu một đoạn Java cơ bản nhờ Java reading cheatsheet.
 - [ ] Làm xong 2 bài tự làm ở trên mà không cần agent.

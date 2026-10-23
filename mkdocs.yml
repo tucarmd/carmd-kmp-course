@@ -76,6 +76,7 @@ extra_css:
 extra_javascript:
   - javascripts/quiz.js
   - javascripts/phone-toy.js
+  - javascripts/lesson03-labs.js
 
 extra:
   social:

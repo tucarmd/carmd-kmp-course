@@ -1,6 +1,7 @@
 ---
 source: lessons/01-kotlin-for-typescript-devs.html
-source_sha: 35a79ec
+source_ref: live
+source_sha: a14043e
 ---
 
 # Kotlin cho dev TypeScript

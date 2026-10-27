@@ -1,6 +1,7 @@
 ---
 source: lessons/09-kotlin-swift-with-skie.html
-source_sha: 1498814
+source_ref: live
+source_sha: a14043e
 ---
 
 # Kotlin↔Swift với SKIE

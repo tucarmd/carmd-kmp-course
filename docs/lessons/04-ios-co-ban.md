@@ -1,6 +1,7 @@
 ---
 source: lessons/04-ios-fundamentals.html
-source_sha: f6beeae
+source_ref: live
+source_sha: a14043e
 ---
 
 # iOS cơ bản

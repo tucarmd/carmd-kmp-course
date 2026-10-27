@@ -1,6 +1,7 @@
 ---
 source: lessons/07-declarative-ui-lists.html
-source_sha: ae9fdb6
+source_ref: live
+source_sha: a14043e
 ---
 
 # UI declarative: danh sách, bất đồng bộ, điều hướng

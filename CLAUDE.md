@@ -16,9 +16,9 @@ Repo học KMP theo khoá https://phongna-inn.github.io/carmd-kmp-course/ — si
 ## Nguồn bài và cập nhật
 
 - User dán link một bài (`…/carmd-kmp-course/lessons/NN-….html`) hoặc nói "dịch bài NN" → làm luôn theo luật dịch ở trên, không hỏi lại.
-- Không cần user gửi link. Danh sách bài: `gh api repos/phongna-inn/carmd-kmp-course/contents/lessons -q '.[].name'` → URL `https://phongna-inn.github.io/carmd-kmp-course/lessons/<tên>.html`.
-- Mỗi trang dịch có frontmatter `source:` (file gốc) và `source_sha:` (commit gốc lúc dịch).
-- Kiểm tra bản gốc đã sửa chưa: `gh api "repos/phongna-inn/carmd-kmp-course/commits?path=<source>&per_page=1"` — sha khác `source_sha` thì xem diff (`gh api repos/phongna-inn/carmd-kmp-course/compare/<source_sha>...<sha mới>`), dịch lại đúng phần đổi, cập nhật `source_sha`.
+- Không cần user gửi link. Site gốc deploy từ nhánh **`live`** (không phải `main`; `main` thiếu bài 11+ và còn file cũ không còn trên site như `00-introduction`, `06-clean-architecture-di-testing`). Danh sách bài: `gh api "repos/phongna-inn/carmd-kmp-course/contents/lessons?ref=live" -q '.[].name'` → URL `https://phongna-inn.github.io/carmd-kmp-course/lessons/<tên>.html`.
+- Mỗi trang dịch có frontmatter `source:` (file gốc) và `source_sha:` (commit gốc lúc dịch); từ bài 10 có thêm `source_ref: live`.
+- Kiểm tra bản gốc đã sửa chưa: `gh api "repos/phongna-inn/carmd-kmp-course/commits?sha=live&path=<source>&per_page=1"` — sha khác `source_sha` thì xem diff (`gh api repos/phongna-inn/carmd-kmp-course/compare/<source_sha>...<sha mới>`), dịch lại đúng phần đổi, cập nhật `source_sha`.
 
 ## Git
 

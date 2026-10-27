@@ -1,6 +1,7 @@
 ---
 source: lessons/08-shared-viewmodels.html
-source_sha: 8f5d176
+source_ref: live
+source_sha: a14043e
 ---
 
 # ViewModel dùng chung

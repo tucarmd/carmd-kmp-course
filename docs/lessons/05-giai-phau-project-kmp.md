@@ -1,6 +1,7 @@
 ---
 source: lessons/05-anatomy-of-a-kmp-project.html
-source_sha: 9bab19e
+source_ref: live
+source_sha: a14043e
 ---
 
 # Giải phẫu một project KMP

@@ -1,6 +1,7 @@
 ---
 source: lessons/02-swift-for-typescript-devs.html
-source_sha: 3054a0b
+source_ref: live
+source_sha: a14043e
 ---
 
 # Swift cho dev TypeScript

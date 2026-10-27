@@ -1,6 +1,7 @@
 ---
 source: lessons/03-android-fundamentals.html
-source_sha: 94097e8
+source_ref: live
+source_sha: a14043e
 ---
 
 # Android cơ bản

@@ -1,6 +1,7 @@
 ---
 source: lessons/06-declarative-ui-components.html
-source_sha: dd022cf
+source_ref: live
+source_sha: a14043e
 ---
 
 # UI declarative: thành phần, state, layout

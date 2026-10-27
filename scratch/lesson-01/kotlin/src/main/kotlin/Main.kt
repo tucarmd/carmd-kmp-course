@@ -39,7 +39,7 @@ fun fakeScan(): Flow<Device> = flow {
         Device("Heart Rate", "CC:03", -67),
     )
     for (device in nearby) {
-        delay(300)     // suspend 300 ms, KHÔNG block thread — giả độ trễ của radio
+        delay(900)     // suspend 300 ms, KHÔNG block thread — giả độ trễ của radio
         emit(device)   // đẩy 1 giá trị cho bên đang collect (bài 13: callback BLE thật thay dòng này)
     }
 }

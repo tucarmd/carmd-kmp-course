@@ -75,6 +75,7 @@ extra_css:
 
 extra_javascript:
   - javascripts/quiz.js
+  - javascripts/api-tips.js
   - javascripts/phone-toy.js
   - javascripts/lesson03-labs.js
   - javascripts/lesson09-labs.js

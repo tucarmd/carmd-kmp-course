@@ -234,3 +234,13 @@
 .md-typeset .sort-score { display: none; margin: .6rem 0 0; font-weight: 600; }
 .md-typeset .sort-score.show { display: block; }
 
+/* Tooltip API (javascripts/api-tips.js): chữ code có giải thích → gạch chấm; popup giải thích + code mẫu. */
+.md-typeset .has-tip { cursor: help; text-decoration: underline dotted var(--dg-accent); text-underline-offset: 3px; }
+.api-tip { position: absolute; z-index: 10; width: min(420px, calc(100vw - 16px)); padding: .6rem .75rem; background: var(--dg-card); color: var(--dg-ink); border: 1px solid var(--dg-rule); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.18); font-family: var(--md-text-font-family); font-size: .72rem; line-height: 1.5; }
+.api-tip[hidden] { display: none; }
+.api-tip-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .3rem; }
+.api-tip-head code { font-family: var(--md-code-font-family); font-weight: 600; color: var(--dg-accent); word-break: break-all; }
+.api-tip-plat { flex: none; font-family: var(--md-code-font-family); font-size: .6rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dg-ink-soft); border: 1px solid var(--dg-rule); border-radius: 999px; padding: 0 .4rem; }
+.api-tip p { margin: 0 0 .45rem; }
+.api-tip pre { margin: 0; padding: .45rem .55rem; background: var(--md-code-bg-color); border-radius: 5px; overflow-x: auto; }
+.api-tip pre code { font-family: var(--md-code-font-family); font-size: .66rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }

@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 — Anatomy of a KMP Project</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/switcher.js" defer></script>
+<script src="../assets/quiz.js" defer></script>
+<script src="../assets/copy.js" defer></script>
+</head>
+<body>
+<main>
+  <p class="kicker">Lesson 05 · Week 1 · Day 5 · Native Device Monitor course</p>
+  <h1>Anatomy of a KMP Project</h1>
+  <div class="meta">
+    <span class="tag">~2.5 h · +0.25 h per extra UI track</span>
+    <span class="tag">Milestone: m00 skeleton</span>
+    <span class="tag">Prereq: <a href="04-ios-fundamentals.html">04</a></span>
+  </div>
+  <div class="switchers">
+    <div class="switcher" data-platform="android"></div>
+    <div class="switcher" data-platform="ios"></div>
+  </div>
+
+  <div class="mission-tie">
+    <strong>Why this matters:</strong> every later lesson adds code to one project with three parts: a <code>shared</code> Kotlin module, an Android app, and an iOS app. Today you build that project's skeleton, milestone <strong>m00</strong>. Both apps show a greeting that comes from shared Kotlin, and part of the greeting is computed differently on each platform. Once you can trace that greeting from a <code>.kt</code> file to an iPhone screen, you can find your way around any KMP codebase, including the team's.
+  </div>
+
+  <p><span class="tag">Primary source</span> JetBrains' <a href="https://kotlinlang.org/docs/multiplatform/multiplatform-discover-project.html">The basics of Kotlin Multiplatform project structure</a>. It's short, and it defines targets and source sets exactly as this lesson uses them. Read it after section 1.</p>
+  <p><span class="tag">Tracks</span> The shared module is identical on every track. Only the few lines that put the greeting on screen differ. Each excerpt below shows only the lines its notes explain, and the complete files are in <a href="#full-files">Full files</a> at the end.</p>
+
+  <h2>1. Two words: target and source set</h2>
+  <p>A <strong>target</strong> is a platform the Kotlin compiler builds your code for: here <code>android</code>, <code>iosArm64</code> (real iPhones) and <code>iosSimulatorArm64</code> (the simulator on an Apple-silicon Mac). There's no single "iOS" target. A device and a simulator need separate binaries (<a href="https://kotlinlang.org/docs/multiplatform/multiplatform-discover-project.html">JetBrains: project structure</a>).</p>
+  <p>A <strong>source set</strong> is a folder of Kotlin files plus the list of targets it compiles to. That list decides which APIs the code may call:</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 262" role="img" aria-labelledby="l05-sets-title">
+      <title id="l05-sets-title">Which source set compiles into which target. commonMain compiles into all three targets: android, iosArm64 and iosSimulatorArm64, and may call only the Kotlin standard library and multiplatform libraries. androidMain compiles into android only and may also call the Android SDK. iosMain compiles into iosArm64 and iosSimulatorArm64 and may also call Apple frameworks such as platform.UIKit and platform.Foundation.</title>
+      <defs><marker id="l05-sets-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="small muted" x="20" y="14">Source sets (folders)</text>
+      <text class="small muted" x="440" y="14">Targets (binaries)</text>
+      <g data-part="android">
+        <rect class="box" x="20" y="24" width="240" height="56" rx="6"/>
+        <text class="mono title" x="32" y="46">androidMain</text>
+        <text class="small" x="32" y="66">+ the Android SDK</text>
+      </g>
+      <rect class="box" x="20" y="102" width="240" height="56" rx="6"/>
+      <text class="mono" x="32" y="124" font-weight="600">commonMain</text>
+      <text class="small" x="32" y="144">Kotlin stdlib + multiplatform libraries only</text>
+      <g data-part="ios">
+        <rect class="box" x="20" y="180" width="240" height="56" rx="6"/>
+        <text class="mono title" x="32" y="202">iosMain</text>
+        <text class="small" x="32" y="222">+ Apple frameworks (platform.UIKit, …)</text>
+      </g>
+      <g data-part="android">
+        <rect class="box" x="440" y="24" width="180" height="40" rx="6"/>
+        <text class="mono title" x="452" y="49">android</text>
+      </g>
+      <g data-part="ios">
+        <rect class="box" x="440" y="136" width="180" height="40" rx="6"/>
+        <text class="mono title" x="452" y="161">iosArm64</text>
+        <rect class="box" x="440" y="196" width="180" height="40" rx="6"/>
+        <text class="mono title" x="452" y="221">iosSimulatorArm64</text>
+      </g>
+      <path class="edge" d="M262,52 L438,44" marker-end="url(#l05-sets-arrow)"/>
+      <path class="edge" d="M262,126 L438,50" marker-end="url(#l05-sets-arrow)"/>
+      <path class="edge" d="M262,134 L438,152" marker-end="url(#l05-sets-arrow)"/>
+      <path class="edge" d="M262,142 L438,212" marker-end="url(#l05-sets-arrow)"/>
+      <path class="edge" d="M262,206 L438,164" marker-end="url(#l05-sets-arrow)"/>
+      <path class="edge" d="M262,214 L438,222" marker-end="url(#l05-sets-arrow)"/>
+    </svg>
+    <figcaption>An arrow means "is compiled into". <code>commonMain</code> goes into every binary, so it may only use what every target has.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="android">Android</li>
+    <li data-part="ios">iOS</li>
+  </ul>
+  <p>To compile one target, Kotlin takes <em>every</em> source set labelled with it and compiles them together. The Android binary is <code>commonMain</code> + <code>androidMain</code>; the simulator binary is <code>commonMain</code> + <code>iosMain</code>. <code>iosMain</code> is an <strong>intermediate</strong> source set: it serves two targets, so you write iOS code once instead of once per architecture. Kotlin creates it (and <code>appleMain</code>, <code>nativeMain</code>) automatically through its default hierarchy (<a href="https://kotlinlang.org/docs/multiplatform/multiplatform-hierarchy.html">JetBrains: hierarchical project structure</a>).</p>
+  <p class="callout ts"><span class="label">From TypeScript</span>Think of a monorepo with one <code>core</code> package that both a web and a mobile app import. The difference: <code>core</code> here compiles to <em>different machine code</em> per platform (JVM bytecode for Android, a native binary for iOS), and the compiler refuses platform APIs in the shared folder instead of crashing at runtime.</p>
+
+  <h2>2. The project on disk</h2>
+  <p>The project has three parts. Gradle builds <code>shared</code> and <code>androidApp</code>. Xcode builds <code>iosApp</code>, and asks Gradle for the shared code before it compiles any Swift (section 7).</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 372" role="img" aria-labelledby="l05-tree-title">
+      <title id="l05-tree-title">The files of the DeviceMonitor project and what each one does. Gradle root: settings.gradle.kts says the Gradle build has the modules :shared and :androidApp; build.gradle.kts holds plugin versions for every module; gradle.properties holds build memory and the AndroidX switch. The shared module: shared/build.gradle.kts sets the targets and the iOS framework; the commonMain source set holds Platform.kt and Greeting.kt and compiles into every target; the androidMain source set holds Platform.android.kt and compiles into Android; the iosMain source set holds Platform.ios.kt and compiles into the two iOS targets. androidApp is an ordinary Android app module that depends on :shared and is built by Gradle. iosApp is an ordinary Xcode project, built by Xcode and not part of the Gradle build.</title>
+      <text class="mono" x="20" y="16">DeviceMonitor/</text>
+      <rect class="box" x="20" y="28" width="270" height="28" rx="6"/><text class="mono small" x="30" y="46">settings.gradle.kts</text>
+      <text class="small muted" x="310" y="46">the Gradle build: modules :shared, :androidApp</text>
+      <rect class="box" x="20" y="64" width="270" height="28" rx="6"/><text class="mono small" x="30" y="82">build.gradle.kts</text>
+      <text class="small muted" x="310" y="82">plugin versions for every module</text>
+      <rect class="box" x="20" y="100" width="270" height="28" rx="6"/><text class="mono small" x="30" y="118">gradle.properties</text>
+      <text class="small muted" x="310" y="118">build memory, AndroidX switch</text>
+      <rect class="box" x="20" y="136" width="270" height="28" rx="6"/><text class="mono small" x="30" y="154">shared/build.gradle.kts</text>
+      <text class="small muted" x="310" y="154">the KMP module: targets + the iOS framework</text>
+      <rect class="box" x="20" y="172" width="270" height="28" rx="6"/><text class="mono small" x="30" y="190">shared/src/commonMain/kotlin/…</text>
+      <text class="small muted" x="310" y="190">Platform.kt, Greeting.kt · every target</text>
+      <g data-part="android">
+        <rect class="box" x="20" y="208" width="270" height="28" rx="6"/><text class="mono small" x="30" y="226">shared/src/androidMain/kotlin/…</text>
+        <text class="small muted" x="310" y="226">Platform.android.kt · android</text>
+      </g>
+      <g data-part="ios">
+        <rect class="box" x="20" y="244" width="270" height="28" rx="6"/><text class="mono small" x="30" y="262">shared/src/iosMain/kotlin/…</text>
+        <text class="small muted" x="310" y="262">Platform.ios.kt · the two iOS targets</text>
+      </g>
+      <g data-part="android">
+        <rect class="box" x="20" y="280" width="270" height="28" rx="6"/><text class="mono small" x="30" y="298">androidApp/</text>
+        <text class="small muted" x="310" y="298">an ordinary Android app module; uses :shared</text>
+      </g>
+      <g data-part="ios">
+        <rect class="box" x="20" y="316" width="270" height="28" rx="6"/><text class="mono small" x="30" y="334">iosApp/</text>
+        <text class="small muted" x="310" y="334">an Xcode project, NOT in the Gradle build</text>
+      </g>
+      <text class="small muted" x="20" y="362">Uncoloured: shared by every target, or part of the build itself.</text>
+    </svg>
+    <figcaption>The project as it stands at m00. <code>androidApp/</code> holds its build file, a manifest and <code>MainActivity.kt</code> (plus a layout on the XML track); <code>iosApp/</code> holds a <code>project.yml</code> (an <a href="https://github.com/yonaskolb/XcodeGen">XcodeGen</a> spec that generates <code>iosApp.xcodeproj</code>) and the Swift sources. From Lesson 10 on, the code in <code>commonMain</code> splits into the app core and shared adapters, and gets those colours.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="android">Android</li>
+    <li data-part="ios">iOS</li>
+  </ul>
+  <p>JetBrains' project wizard generates the same layout; newer wizard versions name the module <code>sharedLogic</code> instead of <code>shared</code> (<a href="https://kotlinlang.org/docs/multiplatform/multiplatform-upgrade-app.html">JetBrains: share more logic</a>).</p>
+
+  <h2>3. The shared module's build file</h2>
+  <figure class="excerpt">
+    <figcaption class="path">shared/build.gradle.kts</figcaption>
+<pre><code>plugins {
+<mark>    id("org.jetbrains.kotlin.multiplatform")</mark>
+<mark>    id("com.android.kotlin.multiplatform.library")</mark>
+}
+
+kotlin {
+<mark>    android {</mark>
+        namespace = "com.example.devicemonitor.shared"
+        compileSdk = 37
+        minSdk = 26
+    }
+<span class="elide">⋯ the iOS targets</span>
+}</code></pre>
+  </figure>
+  <figure class="excerpt">
+    <figcaption class="path">shared/build.gradle.kts</figcaption>
+<pre><code><span class="elide">⋯ plugins { } and android { }</span>
+<mark>    listOf(iosArm64(), iosSimulatorArm64()).forEach { target -&gt;</mark>
+<mark>        target.binaries.framework {</mark>
+<mark>            baseName = "Shared"</mark>
+<mark>            isStatic = true</mark>
+        }
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>Two plugins.</strong> <code>kotlin.multiplatform</code> provides the <code>kotlin { }</code> block, targets and source sets. <code>com.android.kotlin.multiplatform.library</code> is Google's plugin for the Android target of a KMP library. The older <code>com.android.library</code> route is deprecated from AGP 9 (<a href="https://developer.android.com/kotlin/multiplatform/plugin">Android: KMP library plugin</a>).</li>
+    <li><strong><code>android { }</code> sits <em>inside</em> <code>kotlin { }</code>.</strong> Since AGP 8.12 the Android target is configured there. Tutorials showing <code>androidLibrary { }</code> are older, and that name is deprecated. <code>compileSdk</code> and <code>minSdk</code> mean what they meant in Lesson 03. <code>targetSdk</code> is set only in the app module (section 5).</li>
+    <li><strong>Declaring a target is one call:</strong> <code>iosArm64()</code> and <code>iosSimulatorArm64()</code> each add a target and return it. We loop over both to give each one the same output.</li>
+    <li><strong><code>binaries.framework</code></strong> makes each iOS target produce an Apple <em>framework</em>, a bundle containing the compiled binary plus a header that Swift can import. <code>baseName = "Shared"</code> is the name Swift uses: <code>import Shared</code>. <code>isStatic = true</code> links the Kotlin code straight into the app binary.</li>
+    <li>No <code>sourceSets { }</code> block: the folders in section 2 follow the default naming, so Gradle finds them on its own. You add that block in Lesson 08, when <code>commonMain</code> gets its first library.</li>
+  </ol>
+
+  <h2>4. expect / actual: one name, a body per platform</h2>
+  <p>Shared code sometimes needs one small fact only the platform knows, such as the OS version. <code>commonMain</code> can't call <code>android.os.Build</code>, so it <strong>declares</strong> what it needs with <code>expect</code>, and each platform source set <strong>supplies</strong> it with <code>actual</code> (<a href="https://kotlinlang.org/docs/multiplatform/multiplatform-expect-actual.html">JetBrains: expected and actual declarations</a>):</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 238" role="img" aria-labelledby="l05-expect-title">
+      <title id="l05-expect-title">How one call reaches a different body on each platform. In commonMain, Greeting.greet() calls platformName(), which is declared with expect and has no body. When the Android binary is compiled, platformName() resolves to the actual in androidMain, which returns Android plus Build.VERSION.RELEASE. When an iOS binary is compiled, it resolves to the actual in iosMain, which returns UIDevice's systemName and systemVersion. The choice is made at compile time, per target.</title>
+      <defs><marker id="l05-expect-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="small muted" x="20" y="14">commonMain</text>
+      <rect class="box" x="20" y="24" width="190" height="46" rx="6"/>
+      <text class="mono" x="32" y="45">Greeting.greet()</text>
+      <text class="small muted" x="32" y="60">ordinary common code</text>
+      <rect class="box" x="20" y="130" width="190" height="62" rx="6"/>
+      <text class="mono" x="32" y="150">expect fun</text>
+      <text class="mono" x="32" y="167">platformName()</text>
+      <text class="small muted" x="32" y="183">a promise, no body</text>
+      <path class="edge" d="M115,72 L115,128" marker-end="url(#l05-expect-arrow)"/>
+      <text class="small muted" x="125" y="106">calls</text>
+      <text class="small muted" x="410" y="14">one body per target</text>
+      <g data-part="android">
+        <rect class="box" x="410" y="24" width="220" height="82" rx="6"/>
+        <text class="mono title" x="422" y="44">androidMain</text>
+        <text class="mono small" x="422" y="64">actual fun platformName()</text>
+        <text class="small" x="422" y="84">"Android " + VERSION.RELEASE</text>
+        <text class="small muted" x="422" y="99">Android binary</text>
+      </g>
+      <g data-part="ios">
+        <rect class="box" x="410" y="124" width="220" height="82" rx="6"/>
+        <text class="mono title" x="422" y="144">iosMain</text>
+        <text class="mono small" x="422" y="164">actual fun platformName()</text>
+        <text class="small" x="422" y="184">systemName + systemVersion</text>
+        <text class="small muted" x="422" y="199">both iOS binaries</text>
+      </g>
+      <path class="edge" d="M212,150 L408,70" marker-end="url(#l05-expect-arrow)"/>
+      <path class="edge" d="M212,166 L408,166" marker-end="url(#l05-expect-arrow)"/>
+      <text class="small muted" x="236" y="228">At compile time, each target picks the actual from its own source set.</text>
+    </svg>
+    <figcaption>The caller never knows which body runs. The compiler checks that every target has one.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="android">Android</li>
+    <li data-part="ios">iOS</li>
+  </ul>
+  <figure class="excerpt">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/Platform.kt</figcaption>
+<pre><code><span class="elide">⋯ package</span>
+<mark>expect fun platformName(): String</mark></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">shared/src/androidMain/kotlin/com/example/devicemonitor/Platform.android.kt</figcaption>
+<pre><code><span class="elide">⋯ package</span>
+import android.os.Build
+
+<mark>actual fun platformName(): String = "Android ${Build.VERSION.RELEASE}"</mark></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">shared/src/iosMain/kotlin/com/example/devicemonitor/Platform.ios.kt</figcaption>
+<pre><code><span class="elide">⋯ package</span>
+<mark>import platform.UIKit.UIDevice</mark>
+
+<mark>actual fun platformName(): String =</mark>
+    UIDevice.currentDevice.systemName() + " " + UIDevice.currentDevice.systemVersion</code></pre>
+  </figure>
+  <figure class="excerpt">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/Greeting.kt</figcaption>
+<pre><code><span class="elide">⋯ package</span>
+class Greeting {
+<mark>    fun greet(): String = "Hello from shared Kotlin, running on ${platformName()}"</mark>
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li>The <code>expect</code> has no body. It's a promise, and the compiler checks that <em>every</em> target keeps it. Same package, same name, same signature.</li>
+    <li><code>actual</code> marks the platform's implementation. The file names (<code>Platform.android.kt</code>, <code>Platform.ios.kt</code>) are only a convention. The package and the folder decide what matches.</li>
+    <li><code>import platform.UIKit.UIDevice</code> is <strong>Kotlin calling Apple's UIKit directly</strong>. Kotlin/Native ships bindings for Apple frameworks under <code>platform.*</code>, so <code>iosMain</code> can call them without any Swift. Lesson 17's log store uses this style. Note <code>systemName()</code> is called as a method while <code>systemVersion</code> is a property. That's how the bindings expose these two; let the IDE's autocomplete tell you which form each API takes.</li>
+    <li><code>Greeting</code> is ordinary common code. It calls <code>platformName()</code> without knowing which body runs. That decision is made at compile time, per target.</li>
+  </ol>
+  <div class="callout">
+    <span class="label">When <em>not</em> to use expect/actual</span>
+    JetBrains' own advice is to prefer ordinary language features: a common <strong>interface</strong> with one implementation per platform, injected where it's needed (<a href="https://kotlinlang.org/docs/multiplatform/multiplatform-expect-actual.html">same page</a>). An interface can have a fake implementation in tests, and the iOS implementation can be written in Swift. That's exactly what the course's <strong>outbound ports</strong> are from Lesson 10 on (<code>BleScanner</code>, <code>PermissionChecker</code>, …). Keep <code>expect</code>/<code>actual</code> for small facts like this one. Expected <em>classes</em> are still Beta and print a compiler warning.
+  </div>
+
+  <h2>5. Android: shared is just another module</h2>
+  <p>To the Android app, <code>:shared</code> is an ordinary library module. One dependency line makes <code>Greeting</code> importable, and Gradle compiles <code>commonMain</code> + <code>androidMain</code> into the APK:</p>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="excerpt">
+    <figcaption class="path">androidApp/build.gradle.kts</figcaption>
+<pre><code>android {
+<mark>    namespace = "com.example.devicemonitor.android"</mark>
+    compileSdk = 37
+<span class="elide">⋯ defaultConfig { }, buildFeatures { }</span>
+}
+
+dependencies {
+<mark>    implementation(project(":shared"))</mark>
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+<span class="elide">⋯ core-ktx, activity-compose, material3</span>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</figcaption>
+<pre><code><span class="elide">⋯ package and the other imports</span>
+<mark>import com.example.devicemonitor.Greeting</mark>
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+<mark>        enableEdgeToEdge()</mark>
+        super.onCreate(savedInstanceState)
+<mark>        val greeting = Greeting().greet()</mark>
+        setContent {
+            Text(
+                text = greeting,
+<mark>                modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),</mark>
+            )
+        }
+    }
+}</code></pre>
+  </figure>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt">
+    <figcaption class="path">androidApp/build.gradle.kts</figcaption>
+<pre><code>android {
+<mark>    namespace = "com.example.devicemonitor.android"</mark>
+    compileSdk = 37
+<span class="elide">⋯ defaultConfig { }</span>
+}
+
+dependencies {
+<mark>    implementation(project(":shared"))</mark>
+<span class="elide">⋯ core-ktx, appcompat</span>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/res/layout/activity_main.xml</figcaption>
+<pre><code>&lt;FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+<mark>    android:fitsSystemWindows="true"&gt;</mark>
+
+    &lt;TextView
+        android:id="@+id/greetingText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+<mark>        android:layout_margin="24dp" /&gt;</mark>
+&lt;/FrameLayout&gt;</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</figcaption>
+<pre><code><span class="elide">⋯ package and the other imports</span>
+<mark>import com.example.devicemonitor.Greeting</mark>
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+<mark>        enableEdgeToEdge()</mark>
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+<mark>        findViewById&lt;TextView&gt;(R.id.greetingText).text = Greeting().greet()</mark>
+    }
+}</code></pre>
+  </figure>
+  </div>
+  </div>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/AndroidManifest.xml</figcaption>
+<pre><code>&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
+    &lt;application
+        android:label="Device Monitor"
+        <span data-track="compose">android:theme="@android:style/Theme.Material.Light.NoActionBar"</span><span data-track="xml">android:theme="@style/Theme.AppCompat.Light.NoActionBar"</span>&gt;
+<mark>        &lt;activity android:name=".MainActivity" android:exported="true"&gt;</mark>
+            &lt;intent-filter&gt;
+                &lt;action android:name="android.intent.action.MAIN" /&gt;
+                &lt;category android:name="android.intent.category.LAUNCHER" /&gt;
+            &lt;/intent-filter&gt;
+        &lt;/activity&gt;
+    &lt;/application&gt;
+&lt;/manifest&gt;</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><code>implementation(project(":shared"))</code> is the whole integration. Gradle builds the shared module's Android variant first. There's no framework and no copying.</li>
+    <li>The app's <code>namespace</code> (<code>…devicemonitor.android</code>) differs from the shared module's (<code>…devicemonitor.shared</code>). Every Android module needs its own namespace, because each one generates its own <code>R</code> class.</li>
+    <li><code>import com.example.devicemonitor.Greeting</code> is the package from <code>commonMain</code>. The Android app can't tell shared code from its own.</li>
+    <li><code>.MainActivity</code> in the manifest is resolved against the app's namespace, so it means <code>com.example.devicemonitor.android.MainActivity</code>. <code>exported="true"</code> is required for any activity with an intent filter (targetSdk 31+).</li>
+    <li><strong>Edge-to-edge, two halves.</strong> With targetSdk 35 and higher, apps draw behind the system bars by default (<a href="https://developer.android.com/develop/ui/views/layout/edge-to-edge">Android: edge-to-edge</a>). <code>enableEdgeToEdge()</code> makes the bars transparent and picks status-bar icon colours that match the theme; without it, our first build showed white icons on the light background. <span data-track="compose"><code>safeDrawingPadding()</code> then keeps the text out from under the bars.</span><span data-track="xml"><code>fitsSystemWindows="true"</code> on the root then pads the layout clear of the bars. The text's own spacing is a margin, because <code>fitsSystemWindows</code> replaces the root's padding.</span></li>
+  </ol>
+  <p data-both-only="android" class="callout ts"><span class="label">XML vs Compose · what changed and why</span>Only the last line of <code>onCreate</code> differs: a <code>TextView</code> found by id and assigned, versus a <code>Text</code> composable given the string. The dependency on <code>:shared</code> and the call <code>Greeting().greet()</code> are identical. That's the point of the architecture: shared code never knows which UI track renders it.</p>
+
+  <h2>6. iOS: Swift sees Kotlin through a header</h2>
+  <p>Xcode can't read <code>.kt</code> files. Kotlin/Native compiles <code>commonMain</code> + <code>iosMain</code> into the <code>Shared</code> framework, and generates an <strong>Objective-C header</strong> that describes its API. Swift imports that header like any Apple framework (<a href="https://kotlinlang.org/docs/native-objc-interop.html">JetBrains: interop with Swift/Objective-C</a>). Most names come through unchanged, with a few patterns to know:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Kotlin</th><th>Swift sees</th></tr>
+    <tr><td><code>class Greeting</code> with <code>fun greet(): String</code></td><td><code>Greeting().greet()</code> → <code>String</code></td></tr>
+    <tr><td>a <strong>top-level</strong> function in <code>Platform.ios.kt</code></td><td><code>Platform_iosKt.platformName()</code>: a class named after the <em>file</em></td></tr>
+    <tr><td><code>object Foo</code></td><td><code>Foo.shared</code></td></tr>
+    <tr><td><code>interface</code> · <code>List</code> · <code>Unit</code></td><td><code>protocol</code> · <code>Array</code> · <code>Void</code></td></tr>
+    <tr><td><code>suspend fun</code>, <code>Flow</code>, <code>sealed</code> types</td><td>usable but awkward: <strong>Lesson 09</strong> fixes this with SKIE</td></tr>
+  </table>
+  </div>
+  <p>We confirmed the first two rows by reading the generated header: <code>shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework/Headers/Shared.h</code>. Read it yourself after your first build. When Swift can't find a Kotlin name, the answer is in that file.</p>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/ContentView.swift</figcaption>
+<pre><code><span class="elide">⋯ import SwiftUI</span>
+<mark>import Shared</mark>
+
+struct ContentView: View {
+<mark>    private let greeting = Greeting().greet()</mark>
+
+    var body: some View {
+        Text(greeting)
+            .multilineTextAlignment(.center)
+            .padding()
+    }
+}</code></pre>
+  </figure>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/ViewController.swift</figcaption>
+<pre><code><span class="elide">⋯ import UIKit</span>
+<mark>import Shared</mark>
+
+final class ViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let label = UILabel()
+<mark>        label.text = Greeting().greet()</mark>
+<mark>        label.numberOfLines = 0</mark>
+        label.textAlignment = .center
+<span class="elide">⋯ add the label and constrain it to the layout margins</span>
+    }
+}</code></pre>
+  </figure>
+  </div>
+  </div>
+  <ol class="walk">
+    <li><code>import Shared</code> is the framework's <code>baseName</code> from section 3. Nothing else is needed to see <code>Greeting</code>.</li>
+    <li><code>Greeting()</code> creates a Kotlin object from Swift. Kotlin/Native manages its memory, and you don't free it.</li>
+    <li><code>greet()</code> returns a Swift <code>String</code>; the conversion happens at the boundary.</li>
+    <li><span data-track="swiftui">The string is computed once, when the view struct is created, and stored in a <code>let</code>. Lesson 06 introduces state that changes over time.</span><span data-track="uikit">The label spans the layout margins with <code>numberOfLines = 0</code>, so a long greeting wraps instead of being cut off.</span></li>
+    <li><span data-track="swiftui"><code>iOSApp.swift</code> is the same <code>@main App</code> you wrote in Lesson 04, minus the logging. It shows <code>ContentView()</code> in a <code>WindowGroup</code> and never touches shared code.</span><span data-track="uikit"><code>AppDelegate.swift</code> and <code>SceneDelegate.swift</code> are Lesson 04's with the logging removed, except that the scene delegate's root is <code>ViewController()</code> itself, not a navigation controller wrapping it. Neither touches shared code. <code>project.yml</code> keeps Lesson 04's <code>UIApplicationSceneManifest</code>, or the scene delegate never runs.</span></li>
+  </ol>
+  <p data-both-only="ios" class="callout ts"><span class="label">UIKit vs SwiftUI · what changed and why</span>UIKit needs three files to show one label (app delegate, scene delegate, view controller) because you build the window and the view tree yourself. SwiftUI needs two. In both, the line that touches shared code is the same: <code>import Shared</code> and <code>Greeting().greet()</code>.</p>
+
+  <h2>7. How Xcode gets the framework</h2>
+  <p>We use JetBrains' <strong>direct integration</strong>: a script build phase in the Xcode target runs Gradle on every build (<a href="https://kotlinlang.org/docs/multiplatform/multiplatform-direct-integration.html">JetBrains: direct integration</a>):</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 410" role="img" aria-labelledby="l05-build-title">
+      <title id="l05-build-title">What happens when you press Run in Xcode for the simulator in a Debug build. Step 1: the Run Script phase named Compile Kotlin Framework, placed before Compile Sources, runs ./gradlew :shared:embedAndSignAppleFrameworkForXcode. Gradle reads Xcode's environment, which SDK and which configuration, and runs these tasks: downloadKotlinNativeDistribution, which downloads the Kotlin/Native toolchain only if it isn't installed yet; compileKotlinIosSimulatorArm64, which compiles commonMain and iosMain to a klib; linkDebugFrameworkIosSimulatorArm64, which turns the klib into Shared.framework and Shared.h; a symbolic-link task that puts the framework into Xcode's build products folder; and embedAndSignAppleFrameworkForXcode itself, which is skipped because a static framework has nothing to embed. Step 2: Compile Sources, where Swift compiles and import Shared now resolves. Step 3: Link, where the Kotlin code is linked into the app's own code, then signed, producing iosApp.app.</title>
+      <defs><marker id="l05-build-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g data-part="ios">
+        <rect class="box" x="20" y="10" width="600" height="46" rx="6"/>
+        <text class="title" x="34" y="30">1. Run Script "Compile Kotlin Framework"</text>
+        <text class="small" x="34" y="47">placed before Compile Sources · runs ./gradlew :shared:embedAndSignAppleFrameworkForXcode</text>
+      </g>
+      <path class="edge" d="M320,58 L320,72" marker-end="url(#l05-build-arrow)"/>
+      <rect class="edge" x="40" y="74" width="560" height="214" rx="8"/>
+      <text x="56" y="96" font-weight="600">Gradle</text>
+      <text class="small muted" x="110" y="96">reads Xcode's environment (which SDK? which configuration?), then runs:</text>
+      <rect class="box" x="60" y="108" width="330" height="30" rx="6"/><text class="mono small" x="72" y="127">downloadKotlinNativeDistribution</text>
+      <text class="small muted" x="402" y="127">downloads the toolchain once</text>
+      <rect class="box" x="60" y="144" width="330" height="30" rx="6"/><text class="mono small" x="72" y="163">compileKotlinIosSimulatorArm64</text>
+      <text class="small muted" x="402" y="163">commonMain + iosMain → klib</text>
+      <rect class="box" x="60" y="180" width="330" height="30" rx="6"/><text class="mono small" x="72" y="199">linkDebugFrameworkIosSimulatorArm64</text>
+      <text class="small muted" x="402" y="199">klib → Shared.framework + Shared.h</text>
+      <rect class="box" x="60" y="216" width="330" height="30" rx="6"/><text class="mono small" x="72" y="235">symbolicLink…ForXcode…</text>
+      <text class="small muted" x="402" y="235">framework → Xcode's products folder</text>
+      <rect class="box" x="60" y="252" width="330" height="30" rx="6" stroke-dasharray="5 4"/><text class="mono small" x="72" y="271">embedAndSignAppleFrameworkForXcode</text>
+      <text class="small muted" x="402" y="271">SKIPPED: nothing to embed</text>
+      <path class="edge" d="M320,290 L320,304" marker-end="url(#l05-build-arrow)"/>
+      <g data-part="ios">
+        <rect class="box" x="20" y="306" width="600" height="38" rx="6"/>
+        <text class="title" x="34" y="330">2. Compile Sources</text>
+        <text class="small" x="170" y="330">Swift compiles; import Shared now resolves</text>
+      </g>
+      <path class="edge" d="M320,346 L320,360" marker-end="url(#l05-build-arrow)"/>
+      <g data-part="ios">
+        <rect class="box" x="20" y="362" width="600" height="38" rx="6"/>
+        <text class="title" x="34" y="386">3. Link</text>
+        <text class="small" x="170" y="386">the Kotlin code is linked into the app's own code → sign → iosApp.app</text>
+      </g>
+    </svg>
+    <figcaption>The task list is from our build log, trimmed. Coloured boxes are Xcode's steps; the uncoloured boxes are Gradle tasks.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="ios">iOS</li>
+  </ul>
+  <p>Because the framework is static, the finished <code>iosApp.app</code> has no <code>Frameworks/</code> folder: Kotlin and Swift are linked into the same binary. (In Debug builds Xcode puts that code in <code>iosApp.debug.dylib</code> next to a small launcher stub; Release builds produce a single executable.)</p>
+  <figure class="excerpt">
+    <figcaption class="path">iosApp/project.yml</figcaption>
+<pre><code>    settings:
+      base:
+<span class="elide">⋯ bundle ID, Swift version, version numbers</span>
+<mark>        ENABLE_USER_SCRIPT_SANDBOXING: NO</mark>
+    preBuildScripts:
+      - name: Compile Kotlin Framework
+<mark>        basedOnDependencyAnalysis: false</mark>
+        script: |
+<span class="elide">⋯ an early exit when the IDE sets OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED</span>
+          cd "$SRCROOT/.."
+<mark>          ./gradlew :shared:embedAndSignAppleFrameworkForXcode</mark></code></pre>
+  </figure>
+  <p>In XcodeGen, the build phase is a <code>preBuildScripts</code> entry. <code>ENABLE_USER_SCRIPT_SANDBOXING: NO</code> is needed because the script must read and write outside Xcode's sandbox (the <code>shared/</code> folder and <code>~/.gradle</code>). <code>basedOnDependencyAnalysis: false</code> turns off Xcode's "Based on dependency analysis" checkbox, so the script runs on every build and Gradle decides what is up to date. The other ways to ship Kotlin to iOS are a Swift package or CocoaPods. They matter when a separate team consumes the framework, not for one repo like ours.</p>
+
+  <h2>8. What actually happens</h2>
+  <p>We built m00 with the brief below (Kotlin 2.4.21, AGP 9.4.1, Gradle 9.8.2, Xcode 26.2) and ran it:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Run on</th><th>Screen shows</th><th>Which <code>actual</code> ran</th></tr>
+    <tr><td>Android 16 emulator</td><td><code>Hello from shared Kotlin, running on Android 16</code></td><td><code>androidMain</code> → <code>Build.VERSION.RELEASE</code></td></tr>
+    <tr><td>iOS 26.2 simulator</td><td><code>Hello from shared Kotlin, running on iOS 26.2</code></td><td><code>iosMain</code> → <code>UIDevice</code></td></tr>
+  </table>
+  </div>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 214" role="img" aria-labelledby="l05-trace-title">
+      <title id="l05-trace-title">The greeting's path from shared Kotlin to each screen. On Android: MainActivity in androidApp calls Greeting().greet() from commonMain, which calls platformName(); the actual in androidMain answers, and the screen shows Hello from shared Kotlin, running on Android 16. On iOS: ContentView or ViewController in iosApp calls Greeting().greet() through the Shared framework, which Kotlin/Native built from commonMain and iosMain; platformName() resolves to the actual in iosMain, and the screen shows Hello from shared Kotlin, running on iOS 26.2.</title>
+      <defs><marker id="l05-trace-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g data-part="android">
+        <rect class="box" x="10" y="14" width="136" height="62" rx="6"/>
+        <text class="title" x="20" y="34">androidApp</text>
+        <text class="mono small" x="20" y="52">MainActivity</text>
+        <text class="small muted" x="20" y="67">calls greet()</text>
+      </g>
+      <rect class="box" x="186" y="14" width="136" height="62" rx="6"/>
+      <text class="mono small" x="196" y="34" font-weight="600">commonMain</text>
+      <text class="mono small" x="196" y="52">Greeting.greet()</text>
+      <text class="small muted" x="196" y="67">calls platformName()</text>
+      <g data-part="android">
+        <rect class="box" x="362" y="14" width="136" height="62" rx="6"/>
+        <text class="title" x="372" y="34">androidMain</text>
+        <text class="mono small" x="372" y="52">actual</text>
+        <text class="small muted" x="372" y="67">VERSION.RELEASE</text>
+      </g>
+      <rect class="box" x="522" y="14" width="108" height="62" rx="6"/>
+      <text class="small" x="532" y="36" font-weight="600">Screen</text>
+      <text class="small muted" x="532" y="52">"… running on</text>
+      <text class="small muted" x="532" y="66">Android 16"</text>
+      <path class="edge" d="M148,45 L184,45" marker-end="url(#l05-trace-arrow)"/>
+      <path class="edge" d="M324,45 L360,45" marker-end="url(#l05-trace-arrow)"/>
+      <path class="edge" d="M500,45 L520,45" marker-end="url(#l05-trace-arrow)"/>
+      <g data-part="ios">
+        <rect class="box" x="10" y="130" width="136" height="62" rx="6"/>
+        <text class="title" x="20" y="150">iosApp</text>
+        <text class="mono small" x="20" y="168">ContentView /</text>
+        <text class="mono small" x="20" y="183">ViewController</text>
+      </g>
+      <rect class="box" x="186" y="130" width="136" height="62" rx="6"/>
+      <text class="mono small" x="196" y="150" font-weight="600">Shared.framework</text>
+      <text class="mono small" x="196" y="168">Greeting.greet()</text>
+      <text class="small muted" x="196" y="183">via Shared.h</text>
+      <g data-part="ios">
+        <rect class="box" x="362" y="130" width="136" height="62" rx="6"/>
+        <text class="title" x="372" y="150">iosMain</text>
+        <text class="mono small" x="372" y="168">actual</text>
+        <text class="small muted" x="372" y="183">UIDevice</text>
+      </g>
+      <rect class="box" x="522" y="130" width="108" height="62" rx="6"/>
+      <text class="small" x="532" y="152" font-weight="600">Screen</text>
+      <text class="small muted" x="532" y="168">"… running on</text>
+      <text class="small muted" x="532" y="182">iOS 26.2"</text>
+      <path class="edge" d="M148,161 L184,161" marker-end="url(#l05-trace-arrow)"/>
+      <path class="edge" d="M324,161 L360,161" marker-end="url(#l05-trace-arrow)"/>
+      <path class="edge" d="M500,161 L520,161" marker-end="url(#l05-trace-arrow)"/>
+    </svg>
+    <figcaption>The same <code>Greeting.greet()</code> on both platforms. The framework box on iOS is the compiled <code>commonMain</code> + <code>iosMain</code>.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="android">Android</li>
+    <li data-part="ios">iOS</li>
+  </ul>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · a green Android build doesn't prove commonMain is common</span>
+    We put <code>android.os.Build.MODEL</code> into <code>Greeting.kt</code> (commonMain) on purpose. <code>./gradlew :androidApp:assembleDebug</code> <strong>still succeeded</strong>: the Android compilation of commonMain sees the Android SDK. Only an iOS build, or <code>./gradlew :shared:compileCommonMainKotlinMetadata</code>, failed with <code>Unresolved reference 'android'</code>. The IDE highlights it too, but if you only build Android, you find out on the iOS side, later. Run the metadata compile (seconds) after touching <code>commonMain</code>.
+  </div>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · the build-setup failures</span>
+    <ul>
+      <li><strong>Gradle daemon dies with "out of JVM Metaspace"</strong>: an Android + Kotlin/Native build needs more memory than Gradle's default. Set <code>org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g</code> in <code>gradle.properties</code>. We hit exactly this on the first build.</li>
+      <li><strong>The Xcode script fails with <code>⛔ User Script Sandboxing Enabled in Xcode Project</code></strong> (from the Gradle task <code>checkSandboxAndWriteProtection</code>): user script sandboxing is on. Set <code>ENABLE_USER_SCRIPT_SANDBOXING</code> to <code>NO</code> for the target, run <code>./gradlew --stop</code>, and rebuild (<a href="https://kotlinlang.org/docs/multiplatform/multiplatform-direct-integration.html">JetBrains</a>). We reproduced this by flipping the setting back on.</li>
+      <li><strong>The first iOS build takes minutes</strong>: Gradle downloads the Kotlin/Native toolchain (several hundred MB, into <code>~/.konan</code>) once. Later builds are incremental.</li>
+      <li><strong>"No such module 'Shared'"</strong>: the script phase didn't run, or runs <em>after</em> Compile Sources. Check the build phase order in Xcode.</li>
+    </ul>
+  </div>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · Swift's name for your function comes from the file name</span>
+    Rename <code>Platform.ios.kt</code> and every Swift caller of <code>Platform_iosKt.platformName()</code> breaks, even though no Kotlin changed. Prefer exposing classes (like <code>Greeting</code>) to Swift over top-level functions.
+  </div>
+
+  <div class="callout ask-agent">
+    <span class="label">Ask your agent</span>
+    Have your agent open <code>Shared.h</code> with you and explain three declarations in it. For example: "Why is the Objective-C class called <code>SharedGreeting</code> while Swift calls it <code>Greeting</code>?"
+  </div>
+
+  <h2 id="retrieval-checks">Retrieval checks</h2>
+  <p>Answer from memory, without scrolling up.</p>
+  <div class="quiz mcq">
+    <p class="q">Which source set may call <code>platform.UIKit.UIDevice</code>?</p>
+    <div class="opts">
+      <button class="opt">commonMain</button>
+      <button class="opt" data-correct>iosMain</button>
+      <button class="opt">androidMain</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Only source sets that compile exclusively to Apple targets see the <code>platform.*</code> bindings.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">You add a second <code>expect fun</code> but write only the Android <code>actual</code>. What happens?</p>
+    <div class="opts">
+      <button class="opt">the iOS build crashes at runtime</button>
+      <button class="opt" data-correct>the iOS compilation fails to build</button>
+      <button class="opt">iOS silently returns an empty value</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The compiler checks every target: <code>The 'expect' declaration … has no 'actual' declaration in module '&lt;commonMain&gt; for Native'</code>.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">What does <code>baseName = "Shared"</code> control?</p>
+    <div class="opts">
+      <button class="opt">the Gradle module path</button>
+      <button class="opt">the Kotlin package name</button>
+      <button class="opt" data-correct>the Swift import name</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">It names the framework, so Swift writes <code>import Shared</code>. The Gradle module stays <code>:shared</code> and the package stays <code>com.example.devicemonitor</code>.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">What does the Android app need to use <code>Greeting</code>?</p>
+    <div class="opts">
+      <button class="opt" data-correct>a project(":shared") dependency</button>
+      <button class="opt">a copied Shared.framework file</button>
+      <button class="opt">a build phase running Gradle</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">On Android, shared is an ordinary Gradle module. The framework and build phase are the iOS mechanism.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Swift can't find a Kotlin function you wrote. Where do you look first?</p>
+    <div class="opts">
+      <button class="opt">the Xcode project.yml</button>
+      <button class="opt" data-correct>the generated Shared.h</button>
+      <button class="opt">the Gradle settings file</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The header is exactly what Swift sees, including renamed things like <code>Platform_iosKt</code>.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Which command catches an Android API used in commonMain fastest?</p>
+    <div class="opts">
+      <button class="opt">assembleDebug</button>
+      <button class="opt" data-correct>compileCommonMainKotlinMetadata</button>
+      <button class="opt">compileAndroidMain</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Both Android tasks compile commonMain <em>with</em> the Android SDK, so they accept it.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Kotlin <code>interface</code> is to Swift <code>protocol</code> as Kotlin <code>object</code> is to Swift:</p>
+    <div class="opts">
+      <button class="opt">Foo()</button>
+      <button class="opt" data-correct>Foo.shared</button>
+      <button class="opt">Foo.self</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The Objective-C header exposes a Kotlin <code>object</code>'s single instance as <code>shared</code>.</p>
+  </div>
+
+  <h3>Mixed review (interleaved)</h3>
+  <div class="quiz mcq">
+    <p class="q">Where should a live BLE connection object live on Android? (Lesson 03)</p>
+    <div class="opts">
+      <button class="opt">in the Activity</button>
+      <button class="opt" data-correct>in an outbound BLE adapter</button>
+      <button class="opt">in the Manifest</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The Activity is destroyed on rotation. Lesson 03 puts the connection in an Android BLE adapter behind an outbound port (Lesson 14), and the screen state in a ViewModel, which from Lesson 08 lives in <code>commonMain</code>.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Which iOS lifecycle level tells a background monitor that the app left the screen? (Lesson 04)</p>
+    <div class="opts">
+      <button class="opt">a view's disappear callbacks</button>
+      <button class="opt" data-correct>the app/scene level</button>
+      <button class="opt">Info.plist</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Pressing Home fires no view-level callbacks. Only the scene/app level changes.</p>
+  </div>
+
+  <h2 id="unaided-exercise">Unaided exercise</h2>
+  <div class="callout exercise">
+    <span class="label">Unaided exercise (no agent)</span>
+    <ol>
+      <li>Without looking, draw the section 2 tree on paper: the three source sets, and which target(s) each compiles into.</li>
+      <li>Read JetBrains' <a href="https://kotlinlang.org/docs/multiplatform/multiplatform-discover-project.html">project-structure page</a>. Then answer in one sentence: why does <code>iosArm64Main</code> usually stay empty?</li>
+      <li><strong>A second expect.</strong> Add <code>expect fun deviceModel(): String</code> next to <code>platformName()</code>. Write <em>only</em> the Android actual (<code>Build.MODEL</code>) and use it in <code>greet()</code>. Predict which build fails, and with what message, then run both builds. Then add the iOS actual (<code>UIDevice.currentDevice.model</code>) and see both screens change.</li>
+      <li><strong>Find a Swift name.</strong> Create <code>commonMain/…/Strings.kt</code> with a top-level <code>fun shout(text: String): String = text.uppercase() + "!"</code>. Build, find it in <code>Shared.h</code>, and call it from Swift to shout the greeting. Write down the Swift name before you look.</li>
+    </ol>
+  </div>
+
+  <h2 id="agent-brief">Agent brief</h2>
+  <p>Hand this to your coding agent, telling it your tracks. Then read its code against the walkthroughs above, run both apps yourself, and do the unaided exercise.</p>
+  <div class="callout brief copy-wrap">
+<pre class="brief-text">Lesson source: https://phongna-inn.github.io/carmd-kmp-course/lessons/05-anatomy-of-a-kmp-project.html
+Before anything else, download the lesson and the reference pages it links, then read
+them in full. Don't use a summarising web fetch; it can leave out code.
+  mkdir -p .course    # in my workspace root, not inside demo/
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/lessons/05-anatomy-of-a-kmp-project.html" -o .course/lesson-05.html
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/reference/kmp-anatomy-cheatsheet.html" -o .course/ref-kmp-anatomy-cheatsheet.html
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/reference/glossary.html" -o .course/ref-glossary.html
+Use these files to answer my questions about this lesson without asking me for context.
+Then build what follows, using the lesson's "Full files" for my tracks exactly,
+except where the brief below says otherwise.
+
+Lesson 05 (Anatomy of a KMP project): build milestone m00, the KMP skeleton of the
+Native Device Monitor. Both apps show a greeting computed in shared Kotlin.
+My tracks: Android = [Compose | XML], iOS = [SwiftUI | UIKit]  (default Compose + SwiftUI).
+Starting point: nothing. Create the project in demo/ in my workspace; later lessons build on it.
+Prereqs: JDK 17+, Android SDK (ANDROID_HOME, or sdk.dir in local.properties), Xcode,
+XcodeGen (`brew install xcodegen`), any Gradle install to bootstrap the wrapper once
+(`brew install gradle`), or copy the wrapper files from the Lesson 03 Android project.
+
+1. Create exactly these files, complete, as in the lesson's "Full files" section for my
+   tracks (paths relative to demo/). Use the file contents shown there, including package
+   lines and imports:
+     settings.gradle.kts
+     build.gradle.kts                (differs per Android track)
+     gradle.properties
+     shared/build.gradle.kts
+     shared/src/commonMain/kotlin/com/example/devicemonitor/Platform.kt
+     shared/src/commonMain/kotlin/com/example/devicemonitor/Greeting.kt
+     shared/src/androidMain/kotlin/com/example/devicemonitor/Platform.android.kt
+     shared/src/iosMain/kotlin/com/example/devicemonitor/Platform.ios.kt
+     androidApp/build.gradle.kts     (differs per Android track)
+     androidApp/src/main/AndroidManifest.xml     (theme differs per Android track)
+     androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt
+     XML track only: androidApp/src/main/res/layout/activity_main.xml
+     iosApp/project.yml              (differs per iOS track)
+     iosApp/iosApp/: SwiftUI = iOSApp.swift, ContentView.swift;
+                     UIKit = AppDelegate.swift, SceneDelegate.swift, ViewController.swift
+   Do NOT write iosApp/iosApp/Info.plist: XcodeGen generates it from project.yml. Do NOT
+   apply org.jetbrains.kotlin.android anywhere (AGP 9 has built-in Kotlin).
+2. In demo/: `gradle wrapper --gradle-version 9.8.2` (creates gradlew, gradlew.bat and
+   gradle/wrapper/). Add a .gitignore if `git check-ignore` shows the workspace doesn't
+   already ignore build/, .gradle/, .kotlin/, local.properties and xcuserdata/. If ANDROID_HOME isn't set, put
+   sdk.dir=&lt;path to the Android SDK&gt; in local.properties.
+3. Android: from demo/, run
+     ./gradlew :shared:compileCommonMainKotlinMetadata :androidApp:assembleDebug
+   Then install androidApp/build/outputs/apk/debug/androidApp-debug.apk on a running
+   emulator, start com.example.devicemonitor/com.example.devicemonitor.android.MainActivity
+   (`adb shell am start -n …`), and look at the screen (`adb exec-out screencap -p`).
+4. iOS: from demo/iosApp/, run `xcodegen generate`. Pick an iPhone simulator on iOS 17 or
+   newer (the deployment target) from `xcrun simctl list devices available`, then build for
+   it (if two simulators share a name, use id=&lt;UDID&gt; instead of name=), as one command:
+     xcodebuild -project iosApp.xcodeproj -scheme iosApp \
+       -destination 'platform=iOS Simulator,name=&lt;that iPhone&gt;' \
+       -derivedDataPath build build
+   The first iOS build downloads the Kotlin/Native toolchain and takes minutes. Then boot
+   that simulator, install build/Build/Products/Debug-iphonesimulator/iosApp.app with
+   `xcrun simctl install booted …`, launch bundle ID com.example.devicemonitor with
+   `xcrun simctl launch booted …`, and look at the screen
+   (`xcrun simctl io booted screenshot &lt;file&gt;.png`).
+
+Acceptance checks:
+- ./gradlew :shared:compileCommonMainKotlinMetadata :androidApp:assembleDebug succeeds.
+- The iOS build succeeds, and its log shows the "Compile Kotlin Framework" phase running
+  Gradle (:shared:compileKotlinIosSimulatorArm64, :shared:linkDebugFrameworkIosSimulatorArm64)
+  before Swift compiles. embedAndSignAppleFrameworkForXcode itself reports SKIPPED; that's
+  expected for a static framework.
+- No compiler warnings from our own Kotlin or Swift code (don't use -q to check warnings;
+  read the build output). Not from our code, and expected: Gradle's "Deprecated Gradle
+  features … Gradle 10" line, "Unable to strip the following libraries" from the Android
+  build, Xcode's "appintentsmetadataprocessor … warning: Metadata extraction skipped", and
+  xcodebuild's "WARNING: Using the first of multiple matching destinations".
+- Installed and launched: Android shows "Hello from shared Kotlin, running on Android &lt;version&gt;"
+  below the status bar (not under it), with dark, readable status-bar icons on the light
+  background; iOS shows "… running on iOS &lt;version&gt;" (the simulator may be in dark mode).
+Then walk me through each file line by line, and show me where Greeting appears in
+shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework/Headers/Shared.h
+(run ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 if that folder doesn't exist).
+Do NOT do the unaided exercise for me.</pre>
+  </div>
+
+  <h2>Further reading</h2>
+  <ul>
+    <li><a href="../reference/kmp-anatomy-cheatsheet.html">Cheatsheet: KMP project anatomy</a>: source sets, the Kotlin → Swift name table, and the build commands on one page.</li>
+    <li>JetBrains: <a href="https://kotlinlang.org/docs/multiplatform/multiplatform-discover-project.html">project structure</a> (primary source), <a href="https://kotlinlang.org/docs/multiplatform/multiplatform-expect-actual.html">expect/actual</a>, <a href="https://kotlinlang.org/docs/multiplatform/multiplatform-hierarchy.html">hierarchical structure</a>, <a href="https://kotlinlang.org/docs/native-objc-interop.html">Swift/Objective-C interop</a>, <a href="https://kotlinlang.org/docs/multiplatform/multiplatform-direct-integration.html">direct integration</a>.</li>
+    <li>Android: <a href="https://developer.android.com/kotlin/multiplatform/plugin">the Android-KMP library plugin</a>, and Google's codelab <a href="https://developer.android.com/codelabs/kmp-get-started">Get started with Kotlin Multiplatform</a> (adds a shared module to existing apps; it uses SKIE, which you meet in Lesson 09).</li>
+    <li><a href="../reference/glossary.html">Course glossary</a></li>
+    <li>Wisdom: the <code>#multiplatform</code> channel on the Kotlin Slack (<a href="https://surveys.jetbrains.com/s3/kotlin-slack-sign-up">sign up</a>; JetBrains engineers answer there) and <a href="https://reddit.com/r/Kotlin">r/Kotlin</a>.</li>
+  </ul>
+
+  <section id="full-files">
+    <h2>Full files</h2>
+    <p>Every file this lesson creates, complete. Open one to check your work. <code>iosApp/iosApp/Info.plist</code> is generated by <code>xcodegen generate</code> from <code>project.yml</code>, and the Gradle wrapper files by <code>gradle wrapper</code>. Files are coloured by the part of the app they belong to; build files and the shared source set carry no colour.</p>
+
+    <details class="full-file">
+      <summary>settings.gradle.kts</summary>
+<pre><code>pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "DeviceMonitor"
+include(":shared")
+include(":androidApp")</code></pre>
+    </details>
+
+    <details class="full-file" data-track="compose">
+      <summary>build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application") version "9.4.1" apply false
+    id("com.android.kotlin.multiplatform.library") version "9.4.1" apply false
+    id("org.jetbrains.kotlin.multiplatform") version "2.4.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.21" apply false
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="xml">
+      <summary>build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application") version "9.4.1" apply false
+    id("com.android.kotlin.multiplatform.library") version "9.4.1" apply false
+    id("org.jetbrains.kotlin.multiplatform") version "2.4.21" apply false
+}</code></pre>
+    </details>
+
+    <details class="full-file">
+      <summary>gradle.properties</summary>
+<pre><code>org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g
+android.useAndroidX=true</code></pre>
+    </details>
+
+    <details class="full-file">
+      <summary>shared/build.gradle.kts</summary>
+<pre><code>plugins {
+    id("org.jetbrains.kotlin.multiplatform")
+    id("com.android.kotlin.multiplatform.library")
+}
+
+kotlin {
+    android {
+        namespace = "com.example.devicemonitor.shared"
+        compileSdk = 37
+        minSdk = 26
+    }
+
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target -&gt;
+        target.binaries.framework {
+            baseName = "Shared"
+            isStatic = true
+        }
+    }
+}</code></pre>
+    </details>
+
+    <details class="full-file">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/Platform.kt</summary>
+<pre><code>package com.example.devicemonitor
+
+expect fun platformName(): String</code></pre>
+    </details>
+
+    <details class="full-file">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/Greeting.kt</summary>
+<pre><code>package com.example.devicemonitor
+
+class Greeting {
+    fun greet(): String = "Hello from shared Kotlin, running on ${platformName()}"
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-part="android">
+      <summary>shared/src/androidMain/kotlin/com/example/devicemonitor/Platform.android.kt</summary>
+<pre><code>package com.example.devicemonitor
+
+import android.os.Build
+
+actual fun platformName(): String = "Android ${Build.VERSION.RELEASE}"</code></pre>
+    </details>
+
+    <details class="full-file" data-part="ios">
+      <summary>shared/src/iosMain/kotlin/com/example/devicemonitor/Platform.ios.kt</summary>
+<pre><code>package com.example.devicemonitor
+
+import platform.UIKit.UIDevice
+
+actual fun platformName(): String =
+    UIDevice.currentDevice.systemName() + " " + UIDevice.currentDevice.systemVersion</code></pre>
+    </details>
+
+    <details class="full-file" data-track="compose">
+      <summary>androidApp/build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+android {
+    namespace = "com.example.devicemonitor.android"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "com.example.devicemonitor"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildFeatures { compose = true }
+}
+
+dependencies {
+    implementation(project(":shared"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.compose.material3:material3")
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="xml">
+      <summary>androidApp/build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "com.example.devicemonitor.android"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "com.example.devicemonitor"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+    }
+}
+
+dependencies {
+    implementation(project(":shared"))
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/AndroidManifest.xml</summary>
+<pre><code>&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
+    &lt;application
+        android:label="Device Monitor"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"&gt;
+        &lt;activity android:name=".MainActivity" android:exported="true"&gt;
+            &lt;intent-filter&gt;
+                &lt;action android:name="android.intent.action.MAIN" /&gt;
+                &lt;category android:name="android.intent.category.LAUNCHER" /&gt;
+            &lt;/intent-filter&gt;
+        &lt;/activity&gt;
+    &lt;/application&gt;
+&lt;/manifest&gt;</code></pre>
+    </details>
+
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/AndroidManifest.xml</summary>
+<pre><code>&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
+    &lt;application
+        android:label="Device Monitor"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar"&gt;
+        &lt;activity android:name=".MainActivity" android:exported="true"&gt;
+            &lt;intent-filter&gt;
+                &lt;action android:name="android.intent.action.MAIN" /&gt;
+                &lt;category android:name="android.intent.category.LAUNCHER" /&gt;
+            &lt;/intent-filter&gt;
+        &lt;/activity&gt;
+    &lt;/application&gt;
+&lt;/manifest&gt;</code></pre>
+    </details>
+
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.example.devicemonitor.Greeting
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        val greeting = Greeting().greet()
+        setContent {
+            Text(
+                text = greeting,
+                modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
+            )
+        }
+    }
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.os.Bundle
+import android.widget.TextView
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import com.example.devicemonitor.Greeting
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        findViewById&lt;TextView&gt;(R.id.greetingText).text = Greeting().greet()
+    }
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/layout/activity_main.xml</summary>
+<pre><code>&lt;FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"&gt;
+
+    &lt;TextView
+        android:id="@+id/greetingText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="24dp" /&gt;
+&lt;/FrameLayout&gt;</code></pre>
+    </details>
+
+    <details class="full-file" data-track="swiftui">
+      <summary>iosApp/project.yml</summary>
+<pre><code>name: iosApp
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources: [iosApp]
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: Device Monitor
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.devicemonitor
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    preBuildScripts:
+      - name: Compile Kotlin Framework
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "YES" = "$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED" ]; then
+            echo "Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \"YES\""
+            exit 0
+          fi
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode</code></pre>
+    </details>
+
+    <details class="full-file" data-track="uikit">
+      <summary>iosApp/project.yml</summary>
+<pre><code>name: iosApp
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources: [iosApp]
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: "Device Monitor"
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: "Default Configuration"
+                UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.devicemonitor
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    preBuildScripts:
+      - name: "Compile Kotlin Framework"
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "YES" = "$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED" ]; then
+            echo "Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \"YES\""
+            exit 0
+          fi
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode</code></pre>
+    </details>
+
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/iOSApp.swift</summary>
+<pre><code>import SwiftUI
+
+@main
+struct iOSApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/ContentView.swift</summary>
+<pre><code>import SwiftUI
+import Shared
+
+struct ContentView: View {
+    private let greeting = Greeting().greet()
+
+    var body: some View {
+        Text(greeting)
+            .multilineTextAlignment(.center)
+            .padding()
+    }
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/AppDelegate.swift</summary>
+<pre><code>import UIKit
+
+@main
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -&gt; UISceneConfiguration {
+        UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+    }
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/SceneDelegate.swift</summary>
+<pre><code>import UIKit
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
+               options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
+        window.rootViewController = ViewController()
+        window.makeKeyAndVisible()
+        self.window = window
+    }
+}</code></pre>
+    </details>
+
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/ViewController.swift</summary>
+<pre><code>import UIKit
+import Shared
+
+final class ViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let label = UILabel()
+        label.text = Greeting().greet()
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+        ])
+    }
+}</code></pre>
+    </details>
+  </section>
+
+  <nav class="progress-links">
+    <a href="04-ios-fundamentals.html">← 04 iOS fundamentals</a>
+    <a href="06-declarative-ui-components.html">Next: 06 Declarative UI: components, state, layout →</a>
+  </nav>
+</main>
+</body>
+</html>

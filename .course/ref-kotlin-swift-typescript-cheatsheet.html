@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kotlin ↔ Swift ↔ TypeScript Cheatsheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+  <p class="kicker">Reference · from Lessons 01–02</p>
+  <h1>Kotlin ↔ Swift ↔ TypeScript</h1>
+  <p class="source">Compressed from <a href="../lessons/01-kotlin-for-typescript-devs.html">Lesson 01</a> and <a href="../lessons/02-swift-for-typescript-devs.html">Lesson 02</a>. Terms follow the <a href="glossary.html">glossary</a>.</p>
+
+  <h2>Syntax map</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Idea</th><th>TypeScript</th><th>Kotlin</th><th>Swift</th></tr>
+    <tr><td>Constant / variable</td><td><code>const</code> / <code>let</code></td><td><code>val</code> / <code>var</code></td><td><code>let</code> / <code>var</code></td></tr>
+    <tr><td>Function</td><td><code>function f(a: number): number</code></td><td><code>fun f(a: Int): Int</code></td><td><code>func f(_ a: Int) -&gt; Int</code></td></tr>
+    <tr><td>Nullable</td><td><code>string | null</code></td><td><code>String?</code></td><td><code>String?</code></td></tr>
+    <tr><td>Safe call / fallback</td><td><code>a?.b ?? x</code></td><td><code>a?.b ?: x</code></td><td><code>a?.b ?? x</code></td></tr>
+    <tr><td>Force unwrap</td><td><code>a!</code> (compile-time only)</td><td><code>a!!</code> (throws NPE)</td><td><code>a!</code> (crashes)</td></tr>
+    <tr><td>Unwrap into a name</td><td><code>if (a != null)</code></td><td><code>a?.let { … }</code> / smart cast</td><td><code>if let a</code> / <code>guard let a else</code></td></tr>
+    <tr><td>Interpolation</td><td><code>`${x}`</code></td><td><code>"$x ${a.b}"</code></td><td><code>"\(x)"</code></td></tr>
+    <tr><td>Contract</td><td><code>interface</code></td><td><code>interface</code></td><td><code>protocol</code></td></tr>
+    <tr><td>Value object</td><td>none</td><td><code>data class</code> (equals, copy)</td><td><code>struct</code> (copied on assign)</td></tr>
+    <tr><td>Closed set of cases</td><td>discriminated union + <code>never</code></td><td><code>sealed interface</code> + <code>when</code></td><td><code>enum</code> (associated values) + <code>switch</code></td></tr>
+    <tr><td>Lambda / closure</td><td><code>(x) =&gt; x * 2</code></td><td><code>{ x -&gt; x * 2 }</code> / <code>it</code></td><td><code>{ x in x * 2 }</code> / <code>$0</code></td></tr>
+    <tr><td>Add methods to a type</td><td>n/a</td><td><code>fun T.name()</code></td><td><code>extension T { }</code></td></tr>
+    <tr><td>Read-only from outside</td><td><code>private _x; get x()</code></td><td><code>private val _x</code> + <code>val x</code></td><td><code>private(set) var x</code></td></tr>
+  </table>
+  </div>
+
+  <h2>Async map</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Idea</th><th>TypeScript</th><th>Kotlin</th><th>Swift</th></tr>
+    <tr><td>Async function</td><td><code>async function</code> → Promise</td><td><code>suspend fun</code> (no Promise)</td><td><code>func f() async</code></td></tr>
+    <tr><td>Start async work</td><td>just call it</td><td><code>scope.launch { }</code></td><td><code>Task { }</code> (unscoped)</td></tr>
+    <tr><td>Wait</td><td><code>await new Promise(r =&gt; setTimeout(r, 300))</code></td><td><code>delay(300)</code></td><td><code>try await Task.sleep(for: .milliseconds(300))</code></td></tr>
+    <tr><td>Block until done (main/tests only)</td><td>n/a</td><td><code>runBlocking { }</code></td><td>top-level <code>await</code> in <code>main.swift</code></td></tr>
+    <tr><td>Stream of values</td><td>Observable / async generator</td><td><code>Flow&lt;T&gt;</code> (cold)</td><td><code>AsyncStream&lt;T&gt;</code></td></tr>
+    <tr><td>Build a stream</td><td><code>async function*</code> + <code>yield</code></td><td><code>flow { emit(x) }</code></td><td><code>AsyncStream { c in c.yield(x); c.finish() }</code></td></tr>
+    <tr><td>Consume a stream</td><td><code>for await (const x of s)</code></td><td><code>s.collect { x -&gt; }</code></td><td><code>for await x in s</code></td></tr>
+    <tr><td>Current-value holder</td><td><code>BehaviorSubject</code></td><td><code>MutableStateFlow(initial)</code> (hot, conflated)</td><td>property + <code>didSet</code> (later <code>@Observable</code>)</td></tr>
+    <tr><td>UI-thread only</td><td>n/a</td><td><code>Dispatchers.Main</code></td><td><code>@MainActor</code></td></tr>
+  </table>
+  </div>
+
+  <h2>Patterns to recognise</h2>
+  <h3>Backing property (state owned by one class)</h3>
+  <div class="compare">
+    <figure><figcaption>Kotlin</figcaption><pre><code>private val _state = MutableStateFlow&lt;ScanState&gt;(ScanState.Idle)
+val state: StateFlow&lt;ScanState&gt; = _state.asStateFlow()</code></pre></figure>
+    <figure><figcaption>Swift</figcaption><pre><code>private(set) var state: ScanState = .idle</code></pre></figure>
+  </div>
+  <h3>Exhaustive render of a closed state</h3>
+  <div class="compare">
+    <figure><figcaption>Kotlin</figcaption><pre><code>when (state) {
+    ScanState.Idle -&gt; "Idle"
+    is ScanState.Scanning -&gt; "${state.found}"
+    is ScanState.Done -&gt; "done"
+}</code></pre></figure>
+    <figure><figcaption>Swift</figcaption><pre><code>switch state {
+case .idle: "Idle"
+case .scanning(let found): "\(found)"
+case .done: "done"
+}</code></pre></figure>
+  </div>
+
+  <h2>Remember</h2>
+  <ul>
+    <li><strong>StateFlow is conflated:</strong> collectors see the latest value, not every value. Use it for state, not for one-off events.</li>
+    <li><strong>A struct copies, a class shares.</strong> Data is a struct; things with identity (scanners, adapters) are classes.</li>
+    <li><strong>A scope owns its coroutines:</strong> cancel the scope and its work stops. Swift's bare <code>Task { }</code> has no such owner.</li>
+  </ul>
+</main>
+</body>
+</html>

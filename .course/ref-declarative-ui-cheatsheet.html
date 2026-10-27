@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declarative UI Cheatsheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+  <p class="kicker">Reference · from Lessons 06 and 07</p>
+  <h1>Declarative UI Across Four Tracks</h1>
+  <p class="source">Compressed from <a href="../lessons/06-declarative-ui-components.html">Lesson 06</a> and <a href="../lessons/07-declarative-ui-lists.html">Lesson 07</a>. Built and checked with Compose BOM 2026.09.00, Navigation 2.10.2, AGP 9.4.1, Xcode 26.2 (Swift 6 mode).</p>
+
+  <h2>The three rules</h2>
+  <ol>
+    <li><strong>UI = f(state).</strong> Change state, never widgets.</li>
+    <li><strong>Single source of truth.</strong> Each value lives in one place; pass it down, send events up.</li>
+    <li><strong>Derive, don't store.</strong> Status text, enabled flags and error colours are computed from state on every render.</li>
+  </ol>
+  <p>Imperative tracks (XML, UIKit) follow the same rules by hand: state in a few properties, and <strong>one <code>render()</code></strong> that sets every widget from them. Every handler ends with <code>render()</code>.</p>
+
+  <h2>Components</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Need</th><th>Compose</th><th>XML Views</th><th>SwiftUI</th><th>UIKit</th></tr>
+    <tr><td>text</td><td><code>Text</code></td><td><code>TextView</code></td><td><code>Text</code></td><td><code>UILabel</code></td></tr>
+    <tr><td>text input</td><td><code>OutlinedTextField(value, onValueChange)</code></td><td><code>EditText</code></td><td><code>TextField(text: $x)</code></td><td><code>UITextField</code></td></tr>
+    <tr><td>button</td><td><code>Button(onClick, enabled)</code></td><td><code>Button</code> + click listener</td><td><code>Button(action:)</code> + <code>.disabled</code></td><td><code>UIButton(configuration:)</code> + <code>UIAction</code></td></tr>
+    <tr><td>image / icon</td><td><code>Image(painterResource(R.drawable.x))</code></td><td><code>ImageView</code> + <code>app:tint</code></td><td><code>Image(systemName:)</code></td><td><code>UIImageView(image: UIImage(systemName:))</code></td></tr>
+    <tr><td>progress</td><td><code>CircularProgressIndicator</code></td><td><code>ProgressBar</code></td><td><code>ProgressView</code></td><td><code>UIActivityIndicatorView</code></td></tr>
+    <tr><td>vertical layout</td><td><code>Column</code> + <code>Arrangement.spacedBy</code>, <code>Modifier.weight</code></td><td><code>ConstraintLayout</code> (<code>0dp</code> = match constraints)</td><td><code>VStack(spacing:)</code></td><td><code>UIStackView</code> + Auto Layout to margins</td></tr>
+  </table>
+  </div>
+
+  <h2>Local state</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Track</th><th>Declare</th><th>Survives navigation away?</th><th>Survives rotation?</th></tr>
+    <tr><td>Compose</td><td><code>var x by remember { mutableStateOf(…) }</code></td><td><strong>no</strong></td><td>no</td></tr>
+    <tr><td>Compose</td><td><code>var x by rememberSaveable { mutableStateOf(…) }</code></td><td>yes</td><td>yes (Bundle types only)</td></tr>
+    <tr><td>XML</td><td>Fragment fields + <code>onSaveInstanceState</code></td><td>yes (Fragment stays on back stack; views rebuilt)</td><td>only what you save</td></tr>
+    <tr><td>SwiftUI</td><td><code>@State private var x = …</code></td><td>yes (root stays alive under a push)</td><td>yes (no recreation)</td></tr>
+    <tr><td>UIKit</td><td>view-controller properties</td><td>yes</td><td>yes (no recreation)</td></tr>
+  </table>
+  </div>
+  <p>Running work (a coroutine, a scan) is <strong>cancelled</strong> by Android rotation no matter what you save. Long-lived operations belong in a ViewModel (<a href="shared-viewmodel-cheatsheet.html">Lesson 08 cheatsheet</a>).</p>
+  <h2>Observing a source of state (Lesson 08)</h2>
+  <p>An imperative toolkit is <em>pushed</em> updates (a delegate, callback or listener) and copies them into widgets. A declarative one <em>observes</em> a state source and re-renders.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Track</th><th>Source → screen</th></tr>
+    <tr><td>Compose</td><td><code>val state by vm.uiState.collectAsStateWithLifecycle()</code>: a <code>StateFlow</code> becomes Compose <code>State</code></td></tr>
+    <tr><td>XML</td><td><code>repeatOnLifecycle(STARTED) { vm.uiState.collect { render(it) } }</code>: the flow drives <code>render()</code></td></tr>
+    <tr><td>SwiftUI</td><td>an <code>@Observable</code> object's properties, or <code>.task { for await s in flow { state = s } }</code></td></tr>
+    <tr><td>UIKit</td><td>a delegate/callback that calls <code>render()</code>, or <code>Task { for await s in flow { render(s) } }</code></td></tr>
+  </table>
+  </div>
+
+  <h2>Side effects</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Trigger</th><th>Compose</th><th>SwiftUI</th><th>XML / UIKit</th></tr>
+    <tr><td>on tap</td><td><code>onClick</code> + <code>rememberCoroutineScope().launch</code></td><td><code>Button(action:)</code> + <code>Task { }</code></td><td>listener / <code>UIAction</code>; <code>lifecycleScope.launch</code> / <code>Task { }</code></td></tr>
+    <tr><td>on appear</td><td><code>LaunchedEffect(key)</code></td><td><code>.task</code> / <code>.task(id:)</code>: runs again on every return</td><td><code>onViewCreated</code> / <code>viewDidLoad</code></td></tr>
+  </table>
+  </div>
+  <p>Never in the composable / <code>body</code> itself: it can run many times, in any order. Set synchronous state <em>before</em> launching async work, and capture inputs (<code>val query = filter</code>) at tap time.</p>
+
+  <h2>Lists and keys</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Track</th><th>List</th><th>Stable key</th></tr>
+    <tr><td>Compose</td><td><code>LazyColumn { items(list, key = { it.id }) { … } }</code></td><td><code>key = { it.id }</code>, a Bundle-able type</td></tr>
+    <tr><td>XML</td><td><code>RecyclerView</code> + <code>ListAdapter</code>, <code>submitList()</code></td><td><code>DiffUtil.ItemCallback.areItemsTheSame</code></td></tr>
+    <tr><td>SwiftUI</td><td><code>List(list, id: \.id) { … }</code></td><td><code>id:</code> key path, or <code>Identifiable</code></td></tr>
+    <tr><td>UIKit</td><td><code>UITableViewDiffableDataSource&lt;Int, String&gt;</code> + snapshot <code>apply</code></td><td>the item identifier</td></tr>
+  </table>
+  </div>
+  <p>Never key by array index.</p>
+
+  <h2>Navigation</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Track</th><th>Back stack</th><th>Push</th><th>Read the argument</th></tr>
+    <tr><td>Compose</td><td><code>NavHost(navController, startDestination = Route)</code></td><td><code>navController.navigate(Detail(id))</code></td><td><code>entry.toRoute&lt;Detail&gt;()</code></td></tr>
+    <tr><td>XML</td><td><code>NavHostFragment</code> + <code>nav_graph.xml</code></td><td><code>navigate(R.id.action, Bundle().apply { putString("id", id) })</code> (<code>bundleOf</code> is deprecated)</td><td><code>requireArguments().getString("id")</code></td></tr>
+    <tr><td>SwiftUI</td><td><code>NavigationStack</code></td><td><code>NavigationLink(value: Route(id:))</code></td><td><code>.navigationDestination(for: Route.self) { … }</code></td></tr>
+    <tr><td>UIKit</td><td><code>UINavigationController(rootViewController:)</code></td><td><code>pushViewController(DetailVC(id:), animated:)</code></td><td>the initializer</td></tr>
+  </table>
+  </div>
+  <p>Routes carry <strong>ids, not objects</strong>; the destination looks the object up. Compose routes are <code>@Serializable</code> (serialization plugin + <code>kotlinx-serialization-core</code>). A fast double tap navigates twice: wrap a Compose on-screen Back in <code>dropUnlessResumed { }</code> (else a blank screen); in Fragments check <code>currentDestination?.id</code> before <code>navigate</code>/<code>popBackStack</code> (else an <code>IllegalArgumentException</code> on the next tap).</p>
+
+  <h2>Threads</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Track</th><th>UI update from a background thread (observed)</th></tr>
+    <tr><td>Compose</td><td>state write tolerated, no crash; still publish UI state on main</td></tr>
+    <tr><td>XML</td><td>runtime crash: <code>CalledFromWrongThreadException</code></td></tr>
+    <tr><td>SwiftUI</td><td>Swift 6 warning: <code>main actor-isolated property … can not be mutated from a nonisolated context</code></td></tr>
+    <tr><td>UIKit</td><td>Swift 6 error: <code>main actor-isolated instance method … cannot be called from outside of the actor</code></td></tr>
+  </table>
+  </div>
+  <p><code>delay</code> / <code>Task.sleep</code> suspend without blocking. <code>Thread.sleep</code> on the main thread freezes the UI. <code>Task { }</code> inherits <code>@MainActor</code> from a View or view controller; <code>Task.detached</code> doesn't.</p>
+
+  <h2>Traps</h2>
+  <ul>
+    <li>SwiftUI: <code>.frame(maxWidth: .infinity)</code> goes on the button's <em>label</em>, not the <code>Button</code>.</li>
+    <li>XML: <code>fitsSystemWindows</code> on a <code>FragmentContainerView</code> is ignored; put it on a wrapping <code>FrameLayout</code>.</li>
+    <li>XML: nullable <code>binding</code>; set <code>recyclerView.adapter = null</code> in <code>onDestroyView</code> when the adapter is a Fragment field.</li>
+    <li>XML: AppCompat buttons show their text in caps (tests see "SCAN").</li>
+  </ul>
+</main>
+</body>
+</html>

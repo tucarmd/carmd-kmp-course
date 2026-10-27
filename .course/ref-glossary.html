@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Course Glossary</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+  <p class="kicker">Reference · grows with every lesson</p>
+  <h1>Course Glossary</h1>
+  <p class="source">Every lesson uses these terms with exactly these meanings. Each entry names the lesson that introduces it.</p>
+
+  <h2>Course terms</h2>
+  <dl>
+    <dt><strong>Milestone</strong> (m00…m15, e1…e3)</dt>
+    <dd>The finished demo state a lesson produces. Each lesson's agent brief starts from the previous milestone. (Plan)</dd>
+    <dt><strong>UI track</strong></dt>
+    <dd>Your choice of UI stack per platform: Android <em>XML</em> or <em>Compose</em>, iOS <em>UIKit</em> or <em>SwiftUI</em>. The default is Compose + SwiftUI. (Plan)</dd>
+    <dt><strong>Agent brief</strong></dt>
+    <dd>The copy-paste block at the end of each lesson that tells a coding agent what to build and how to check it. (Plan)</dd>
+    <dt><strong>Unaided exercise</strong></dt>
+    <dd>A small change you make without an agent. Not optional. (Plan)</dd>
+    <dt><strong>Core lessons</strong></dt>
+    <dd>The lessons that build the Native Device Monitor up to the finished app, sized for four 5-day weeks. (Plan)</dd>
+    <dt><strong>Lesson 00</strong></dt>
+    <dd>The short introduction page: what you'll build, how the course works, and the map of every lesson. Read once, in minutes, before the first lesson. (00)</dd>
+    <dt><strong>Extension</strong> (course)</dt>
+    <dd>An optional lesson that starts from the finished core app and adds one capability (network, camera, a BLE library). (Plan)</dd>
+    <dt><strong>Excerpt</strong></dt>
+    <dd>The few lines of code a lesson section talks about, shown with their file path and with the rest of the file elided. Code walkthroughs are made of excerpts. (00)</dd>
+    <dt><strong>Full files</strong></dt>
+    <dd>The complete source of every file a lesson touches, kept collapsed at the end of the lesson so the agent brief can be built from the page alone. (00)</dd>
+  </dl>
+
+  <h2>Language and concurrency</h2>
+  <dl>
+    <dt><strong>Data class</strong> (Kotlin)</dt>
+    <dd>A class for holding values; the compiler generates <code>equals</code>, <code>hashCode</code>, <code>toString</code>, <code>copy</code>. (01)</dd>
+    <dt><strong>Sealed interface</strong> (Kotlin) / <strong>enum with associated values</strong> (Swift)</dt>
+    <dd>A closed set of cases known at compile time, so <code>when</code>/<code>switch</code> over it must be exhaustive. Used for every UI state. (01)</dd>
+    <dt><strong>Extension</strong></dt>
+    <dd>Adding members to an existing type without subclassing it; statically resolved. (01)</dd>
+    <dt><strong>Value type / reference type</strong></dt>
+    <dd>A value type (Swift <code>struct</code>) is copied on assignment; a reference type (<code>class</code>) is shared. (02)</dd>
+    <dt><strong>Optional / nullable type</strong></dt>
+    <dd><code>T?</code>: a type that may hold no value. Must be unwrapped or given a fallback before use. (01)</dd>
+    <dt><strong>Coroutine</strong></dt>
+    <dd>A suspendable unit of work in Kotlin, started by a builder such as <code>launch</code>. (01)</dd>
+    <dt><strong>Suspend function</strong></dt>
+    <dd>A Kotlin function that can pause without blocking a thread; callable only from a coroutine or another suspend function. (01)</dd>
+    <dt><strong>Coroutine scope / structured concurrency</strong></dt>
+    <dd>A scope owns the coroutines launched in it; cancelling the scope cancels them all. (01)</dd>
+    <dt><strong>Flow</strong> (cold)</dt>
+    <dd>An async stream whose producer runs only when collected, once per collector. (01)</dd>
+    <dt><strong>StateFlow</strong> (hot, conflated)</dt>
+    <dd>A flow that always holds one current value; collectors see only the latest value, not a backlog. (01)</dd>
+    <dt><strong>Conflation</strong></dt>
+    <dd>Dropping intermediate values so a slow consumer sees only the most recent one. (01)</dd>
+    <dt><strong>Backing property</strong></dt>
+    <dd>Private mutable state exposed as a public read-only view (<code>_state</code> / <code>state</code>; Swift <code>private(set)</code>). (01)</dd>
+    <dt><strong>AsyncSequence / AsyncStream</strong> (Swift)</dt>
+    <dd>Swift's async stream protocol and its push-based implementation (<code>yield</code>, <code>finish</code>), consumed with <code>for await</code>. (02)</dd>
+    <dt><strong>Task</strong> (Swift)</dt>
+    <dd>A unit of async work. A bare <code>Task { }</code> is unstructured: nothing cancels it automatically. (02)</dd>
+    <dt><strong>Main actor</strong> (<code>@MainActor</code>)</dt>
+    <dd>The isolation domain for UI work; code marked with it runs only there, and the compiler enforces that. (02)</dd>
+  </dl>
+  <h2>Platform</h2>
+  <dl>
+    <dt><strong>Activity</strong> (Android)</dt>
+    <dd>An app entry point with a window and a lifecycle (<code>onCreate</code> … <code>onDestroy</code>). The course app has one. (03)</dd>
+    <dt><strong>Context</strong> (Android)</dt>
+    <dd>Your handle to the system: resources, system services, starting components. An Activity is a Context. (03)</dd>
+    <dt><strong>Intent</strong> (Android)</dt>
+    <dd>A message asking the OS to start something; <em>explicit</em> (a named class) or <em>implicit</em> (any app that can handle an action). (03)</dd>
+    <dt><strong>Manifest</strong> / <strong>Info.plist</strong></dt>
+    <dd>The declaration file each OS reads before running your code: components, permissions, metadata, permission-prompt strings. (03, 04)</dd>
+    <dt><strong>Configuration change</strong> (Android)</dt>
+    <dd>Rotation, dark mode, font size, etc.; by default destroys and recreates the Activity. (03)</dd>
+    <dt><strong>compileSdk / minSdk / targetSdk</strong></dt>
+    <dd>APIs you can see / oldest Android that can install / runtime behaviour you opt into. (03)</dd>
+    <dt><strong>Scene</strong> / <strong>scene phase</strong> (iOS)</dt>
+    <dd>One app window and its app-level state: active, inactive, background. The level to hook for "is the app in front?" (04)</dd>
+    <dt><strong>View lifecycle</strong> (iOS)</dt>
+    <dd>Appear/disappear events for one screen inside the app (<code>onAppear</code>, <code>viewWillAppear</code>, …); <em>not</em> fired by backgrounding. (04)</dd>
+    <dt><strong>Logger</strong> / <strong>Logcat</strong></dt>
+    <dd>Apple's structured logging API (subsystem + category) / Android's log viewer for <code>Log.d(tag, msg)</code>. (03, 04)</dd>
+  </dl>
+  <h2>Kotlin Multiplatform</h2>
+  <dl>
+    <dt><strong>KMP</strong> (Kotlin Multiplatform)</dt>
+    <dd>Compiling one Kotlin codebase to several platforms; here the shared code of the Android and iOS apps. (05)</dd>
+    <dt><strong>Shared module</strong> (<code>:shared</code>)</dt>
+    <dd>The Gradle module holding the shared Kotlin. Android depends on it as a library; iOS consumes it as a framework. (05)</dd>
+    <dt><strong>Target</strong></dt>
+    <dd>A platform the compiler builds for: <code>android</code>, <code>iosArm64</code> (devices), <code>iosSimulatorArm64</code> (simulator on Apple silicon). (05)</dd>
+    <dt><strong>Source set</strong></dt>
+    <dd>A folder of Kotlin code plus the targets it compiles to, which decides the APIs it may call: <code>commonMain</code>, <code>androidMain</code>, <code>iosMain</code>. (05)</dd>
+    <dt><strong>Intermediate source set</strong></dt>
+    <dd>A source set shared by some but not all targets, e.g. <code>iosMain</code> for both iOS targets. Created by Kotlin's default hierarchy. (05)</dd>
+    <dt><strong>expect / actual</strong></dt>
+    <dd>A declaration without a body in common code (<code>expect</code>) and its required per-platform implementation (<code>actual</code>). For small facts; behaviour goes behind a port. (05)</dd>
+    <dt><strong>Kotlin/Native</strong></dt>
+    <dd>The Kotlin compiler backend that produces native binaries, used for the iOS targets; exposes Apple frameworks to Kotlin as <code>platform.*</code>. (05)</dd>
+    <dt><strong>Framework</strong> (Apple)</dt>
+    <dd>A bundle of a compiled binary plus headers. The shared module becomes <code>Shared.framework</code>, imported in Swift as <code>import Shared</code>. (05)</dd>
+    <dt><strong>Objective-C header</strong> (<code>Shared.h</code>)</dt>
+    <dd>The generated description of the shared API that Swift actually reads; the place to look up Swift names such as <code>Platform_iosKt</code>. (05)</dd>
+    <dt><strong>Direct integration</strong></dt>
+    <dd>Wiring the framework into Xcode with a script build phase that runs <code>:shared:embedAndSignAppleFrameworkForXcode</code> on every build. (05)</dd>
+  </dl>
+  <h2>Declarative UI</h2>
+  <dl>
+    <dt><strong>Imperative UI</strong> / <strong>declarative UI</strong></dt>
+    <dd>Imperative: handlers mutate widget objects one property at a time (XML Views, UIKit). Declarative: you describe the screen for a given state and the framework applies the changes (Compose, SwiftUI). (06)</dd>
+    <dt><strong>UI state</strong></dt>
+    <dd>The values a screen is drawn from, e.g. <code>isScanning</code> and <code>foundCount</code>. The screen is a function of it. (06)</dd>
+    <dt><strong>Single source of truth</strong></dt>
+    <dd>Each piece of state lives in exactly one place; everyone else reads it or asks it to change. (06)</dd>
+    <dt><strong>Derived state</strong></dt>
+    <dd>A value computed from state on every render (status text, enabled flags) instead of stored. (06)</dd>
+    <dt><strong>Recomposition</strong> / <strong>body re-evaluation</strong></dt>
+    <dd>The framework re-running UI code when state it read changes (Compose / SwiftUI). Frequent, skippable, order not guaranteed, so UI code must be side-effect free. (06)</dd>
+    <dt><strong>render()</strong></dt>
+    <dd>On imperative tracks, the one function that copies all state into all widgets; every handler ends with it. (06)</dd>
+    <dt><strong>Side effect</strong></dt>
+    <dd>Work that changes something outside the UI function (starting a scan, writing a file). Belongs in event callbacks or lifecycle-bound effects (<code>LaunchedEffect</code>, <code>.task</code>), never in the UI function. (06)</dd>
+    <dt><strong>State hoisting</strong> / <strong>unidirectional data flow</strong></dt>
+    <dd>Moving state up to a caller and passing down values plus event lambdas: state goes down, events go up. A SwiftUI <code>Binding</code> is the two-way form. (06)</dd>
+    <dt><strong>Stable key</strong> (item identity)</dt>
+    <dd>A unique, unchanging id per list item (the device id), used by lists to match rows across updates. Never an index. (07)</dd>
+    <dt><strong>Back stack</strong> / <strong>route</strong></dt>
+    <dd>The stack of screens; Back pops one. A route is the small, saveable value pushed to open a screen (<code>DeviceDetail(id)</code>), carrying ids, not objects. (07)</dd>
+    <dt><strong>Main thread</strong> (UI thread)</dt>
+    <dd>The one thread allowed to touch UI. Don't block it; don't update UI from elsewhere. Swift: <code>@MainActor</code>. (07)</dd>
+  </dl>
+
+  <h2>Shared ViewModels and Kotlin↔Swift</h2>
+  <dl>
+    <dt><strong>ViewModel</strong></dt>
+    <dd>A screen-level state holder that outlives the screen's views: it survives Android rotation and lives until its owner is gone. AndroidX's <code>ViewModel</code> is multiplatform, so ours lives in <code>commonMain</code>. (08)</dd>
+    <dt><strong>ViewModelStore</strong> / <strong>ViewModelStoreOwner</strong></dt>
+    <dd>The container that keeps ViewModels, and whatever holds that container (an Activity, Fragment or navigation entry). Clearing the store clears its ViewModels. iOS has no built-in owner. (08)</dd>
+    <dt><strong>ViewModelOwner</strong> (course term)</dt>
+    <dd>Our Swift class that plays <code>ViewModelStoreOwner</code> on iOS: it resolves ViewModels from a store and clears the store in <code>deinit</code>. (08)</dd>
+    <dt><strong>Cleared</strong> (ViewModel)</dt>
+    <dd>The end of a ViewModel's life: <code>onCleared()</code> runs and <code>viewModelScope</code> is cancelled, which stops its work. (08)</dd>
+    <dt><strong>viewModelScope</strong></dt>
+    <dd>The coroutine scope of a ViewModel; everything launched in it is cancelled when the ViewModel is cleared. Runs on <code>Dispatchers.Main.immediate</code>. (08)</dd>
+    <dt><strong>ViewModel factory</strong></dt>
+    <dd>Tells the platform how to construct a ViewModel with arguments (<code>viewModelFactory { initializer { … } }</code>), because the platform, not your code, creates it. (08)</dd>
+    <dt><strong>Lifecycle-aware collection</strong></dt>
+    <dd>Collecting a flow only while the screen is visible: <code>collectAsStateWithLifecycle</code>, <code>repeatOnLifecycle(STARTED)</code>, UIKit <code>viewWillAppear</code>/<code>viewDidDisappear</code>, and from Lesson 09 SwiftUI <code>.task</code>. Stopping collection doesn't stop the ViewModel's work. (08)</dd>
+    <dt><strong>User message as state</strong></dt>
+    <dd>A one-time message (an error dialog) kept in UI state until the UI reports it shown (<code>errorShown()</code>), instead of being sent as an event that can be lost. (08)</dd>
+    <dt><strong>Impossible state</strong></dt>
+    <dd>A combination of values the types allow but that means nothing (scanning with no result list). A sealed type removes it. (08)</dd>
+    <dt><strong>Bridge</strong> (interop)</dt>
+    <dd>Code that adapts a Kotlin API into a Swift-friendly one, e.g. Lesson 08's <code>StateFlowWatcher</code>. Hand-written, or generated by SKIE (Lesson 09). (08)</dd>
+    <dt><strong>SKIE</strong></dt>
+    <dd>Touchlab's Kotlin compiler plugin that generates Swift into the framework: flows as typed <code>AsyncSequence</code>s, sealed types via <code>onEnum(of:)</code>, <code>suspend</code> as <code>async</code>. Pinned to exact Kotlin versions. (09)</dd>
+    <dt><strong>onEnum(of:)</strong></dt>
+    <dd>SKIE's function that turns a Kotlin sealed value into a generated Swift enum, so <code>switch</code> is exhaustive. (09)</dd>
+    <dt><strong>Swift export</strong></dt>
+    <dd>JetBrains' upcoming Kotlin→Swift API export (Alpha), meant to replace the Objective-C header. (09)</dd>
+    <dt><strong>Sendable</strong> (Swift)</dt>
+    <dd>A type safe to pass between concurrency domains. Kotlin classes arrive without it, so Swift 6 rejects them in <code>@Sendable</code> closures. (08)</dd>
+    <dt><strong>api / implementation</strong> (Gradle)</dt>
+    <dd><code>api</code> exposes a dependency to modules that use yours; needed when its types appear in your public API (<code>ViewModel</code>, <code>StateFlow</code>). <code>implementation</code> keeps it private. (08)</dd>
+    <dt><strong>export</strong> (framework)</dt>
+    <dd>Including a dependency's public API in the iOS framework header, so Swift can use its classes under clean names. (08)</dd>
+  </dl>
+
+  <h2>Architecture, DI and testing</h2>
+  <dl>
+    <dt><strong>Hexagonal architecture</strong> / <strong>ports and adapters</strong></dt>
+    <dd>Alistair Cockburn's pattern: an inside (the app core) that the outside reaches only through ports, with adapters plugged into the ports. The hexagon is just room to draw ports; six means nothing. (10)</dd>
+    <dt><strong>Shared code</strong></dt>
+    <dd>Everything in the shared module's <code>commonMain</code>: the app core plus the shared ViewModels and shared adapters. (10)</dd>
+    <dt><strong>App core</strong></dt>
+    <dd>The part of the shared code that holds the app's models, ports and services, and imports nothing from Android, iOS or any framework (only Kotlin's standard library and kotlinx.coroutines). Package <code>core</code>. (10)</dd>
+    <dt><strong>Inbound port</strong></dt>
+    <dd>An interface for what the app offers, one per capability (<code>DeviceScanning</code>), implemented by a service and called by inbound adapters and by bridge adapters. Package <code>core.inbound</code>. Elsewhere: driving or primary port, input boundary. (10, 17)</dd>
+    <dt><strong>Outbound port</strong></dt>
+    <dd>An interface for what the app needs from the outside world, named in the app's terms (<code>BleScanner</code>, never <code>ApiClient</code>), implemented by outbound adapters. Package <code>core.outbound</code>. Elsewhere: driven or secondary port; roughly a repository. (10)</dd>
+    <dt><strong>Service</strong></dt>
+    <dd>A class in the app core that implements an inbound port by applying the app's rules and calling outbound ports (<code>ScanningService</code>). Elsewhere, each method is roughly a use case. (10)</dd>
+    <dt><strong>Inbound adapter</strong></dt>
+    <dd>Code that drives the app through inbound ports: the shared ViewModels in <code>adapter.inbound</code>, and the tests in <code>commonTest</code>. (10, 11)</dd>
+    <dt><strong>Outbound adapter</strong></dt>
+    <dd>One concrete implementation of an outbound port for one platform or technology: the simulated scanner, an Android radio (Kotlin in <code>androidMain</code>), a Swift CoreBluetooth class, a Ktor HTTP client. Shared ones live in <code>adapter.outbound</code>. (10)</dd>
+    <dt><strong>Bridge adapter</strong> (architecture; not the interop bridge)</dt>
+    <dd>An outbound adapter in the shared code that implements one capability's outbound port by calling another capability's inbound port (for example <code>SessionConnectionStatus</code>, which gives <code>StatusService</code> the session's connection state), so services never know each other. It holds no rules. (17)</dd>
+    <dt><strong>Dependency injection (DI)</strong> / <strong>constructor injection</strong></dt>
+    <dd>A class receives its dependencies (through its constructor) instead of building them. The app decides what to pass. (10)</dd>
+    <dt><strong>Composition root</strong></dt>
+    <dd>The one place that builds the object graph and names the services and adapters: which service backs each inbound port, which adapter backs each outbound port. <code>AppContainer</code> by hand (Lesson 10), then a Koin module (Lesson 11). (10, 11)</dd>
+    <dt><strong>Service locator</strong></dt>
+    <dd>A registry that classes ask for their dependencies (<code>KoinComponent</code> + <code>get()</code>). It hides what a class needs, so the course allows it only at the edges. (11)</dd>
+    <dt><strong>DI container</strong> / <strong>Koin module</strong></dt>
+    <dd>A library that builds the graph from declarations (<code>single</code>: one instance, <code>factory</code>: new each time, <code>viewModel</code>: new, then kept by the store). It works out the order, but with Koin's classic DSL, the one the course uses, it checks the graph only at run time. (11)</dd>
+    <dt><strong>Test double</strong></dt>
+    <dd>Any object a test uses in place of a real one. The course writes them by hand, as classes that implement a port, instead of using a mocking library. (11)</dd>
+    <dt><strong>Fake</strong></dt>
+    <dd>An outbound adapter written for tests, which the test controls (<code>FakeBleScanner</code>: the test decides what the radio hears and whether it fails). Android prefers fakes over mocks. A test implementation of an <em>inbound</em> port (<code>TestDeviceScanning</code>) stands in for the app core instead, so the course doesn't call it a fake. (11)</dd>
+    <dt><strong>Test dispatcher</strong> / <strong>virtual time</strong></dt>
+    <dd><code>StandardTestDispatcher</code> queues coroutines on a test scheduler whose clock skips delays. <code>Dispatchers.setMain</code> puts it under <code>viewModelScope</code>, and <code>runTest</code> shares its clock. (11)</dd>
+    <dt><strong>Turbine</strong></dt>
+    <dd>Cash App's library for testing flows: <code>flow.test { awaitItem() }</code>, with a 3 s wall-clock timeout. Unconsumed items fail the test. (11)</dd>
+    <dt><strong>Host test</strong></dt>
+    <dd>A test that runs on the development machine's JVM (<code>testAndroidHostTest</code>), as opposed to a device. With the Android-KMP plugin it's off until <code>withHostTest {}</code>. (11)</dd>
+    <dt><strong>Mutation check</strong></dt>
+    <dd>Deliberately breaking one rule in production code to see whether any test fails. If none does, no test protects that rule. (11)</dd>
+  </dl>
+</main>
+</body>
+</html>

@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>06 — Declarative UI: Components, State, Layout</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/switcher.js" defer></script>
+<script src="../assets/quiz.js" defer></script>
+<script src="../assets/copy.js" defer></script>
+<script src="../assets/phone-toy.js" defer></script>
+</head>
+<body>
+<main>
+  <p class="kicker">Lesson 06 · Week 2 · Day 6 · Native Device Monitor course</p>
+  <h1>Declarative UI: Components, State, Layout</h1>
+  <div class="meta">
+    <span class="tag">~2 h · +1 h per extra UI track</span>
+    <span class="tag">Milestone: m01 Device Monitor screen</span>
+    <span class="tag">Prereq: <a href="05-anatomy-of-a-kmp-project.html">05</a></span>
+  </div>
+  <div class="switchers">
+    <div class="switcher" data-platform="android"></div>
+    <div class="switcher" data-platform="ios"></div>
+  </div>
+
+  <div class="mission-tie">
+    <strong>Why this matters:</strong> every feature in the Native Device Monitor (scan results, connection state, live sensor values, permission errors) reaches the user through one screen that has to stay <em>consistent</em> while data arrives asynchronously. Today you build that screen's first version, milestone <strong>m01</strong>: a title with an icon, a name filter, a Scan button, a progress indicator and a status/error line. The data is a fake scan from shared Kotlin, so you can focus on how the UI reacts to it. Lesson 07 adds the device list and a second screen, and from Lesson 08 a shared ViewModel drives the screen.
+  </div>
+
+  <p><span class="tag">Primary source</span> Android's <a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a>. It's the clearest statement of the declarative model, and everything in it applies to SwiftUI too. Read it after section 2. iOS learners add Apple's <a href="https://developer.apple.com/documentation/swiftui/state">State</a> reference page (ten minutes).</p>
+  <p><span class="tag">Tracks</span> The concepts (sections 1, 2 and 6) and the shared Kotlin (section 3) are the same on every track. The screens differ per track. XML Views and UIKit are <em>imperative</em> toolkits. On those tracks you write the declarative discipline by hand, in a single <code>render()</code> function. Each excerpt below shows only the lines its notes explain, and the complete files are in <a href="#full-files">Full files</a> at the end.</p>
+
+  <h2>1. Imperative vs declarative, by breaking one</h2>
+  <p>In an <strong>imperative</strong> toolkit, widgets are objects that hold their own state, and your event handlers mutate them one call at a time: disable the button, show the spinner, set the label. In a <strong>declarative</strong> toolkit, you describe what the screen should look like <em>for a given state</em>, and the framework works out the changes. Android's docs put it as "conceptually regenerating the entire screen from scratch, then applying only the necessary changes" (<a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a>).</p>
+  <p>The toy below is the Device Monitor's scan flow written both ways. The handlers on the left are exactly the code underneath it. Click the events in different orders until the two phones disagree. (The toy also draws the results as rows. The m01 screen shows only how many devices it found, and Lesson 07 adds the rows.)</p>
+
+  <div class="toy" id="toy">
+    <div class="toy-controls">
+      <button type="button" data-ev="scan">Tap Scan</button>
+      <button type="button" data-ev="found">Scan finds 3 devices</button>
+      <button type="button" data-ev="none">Scan finds nothing</button>
+      <button type="button" data-ev="reset">Reset</button>
+    </div>
+    <div class="toy-phones">
+      <figure><figcaption>Imperative: handlers edit widgets</figcaption><div id="toy-imp"></div></figure>
+      <figure><figcaption>Declarative: screen = render(state)</figcaption><div id="toy-dec"></div></figure>
+    </div>
+    <pre class="toy-state" id="toy-state"></pre>
+  </div>
+  <div class="compare">
+    <figure>
+      <figcaption>Imperative handlers</figcaption>
+<pre><code>fun onScanTapped() {
+    button.isEnabled = false
+    spinner.show()
+    status.text = "Scanning…"
+    list.clear()
+}
+
+fun onResults(devices: List&lt;Device&gt;) {
+    if (devices.isEmpty()) {
+        status.text = "No devices found."
+        status.color = RED
+        return
+    }
+    spinner.hide()
+    button.isEnabled = true
+    status.text = "Devices found: ${devices.size}"
+    list.show(devices)
+}</code></pre>
+    </figure>
+    <figure>
+      <figcaption>Declarative: state + one render</figcaption>
+<pre><code>var isScanning = false
+var devices: List&lt;Device&gt;? = null  // null = not scanned
+
+fun onScanTapped() { isScanning = true; devices = null }
+fun onResults(found: List&lt;Device&gt;) {
+    isScanning = false; devices = found
+}
+
+fun render() = Screen(
+    buttonEnabled = !isScanning,
+    spinner = isScanning,
+    status = when {
+        isScanning -&gt; "Scanning…"
+        devices == null -&gt; "Tap Scan to look for devices."
+        devices.isEmpty() -&gt; "No devices found."
+        else -&gt; "Devices found: ${devices.size}"
+    },
+    statusError = devices?.isEmpty() == true,
+    rows = devices.orEmpty(),
+)</code></pre>
+    </figure>
+  </div>
+
+  <div class="quiz mcq">
+    <p class="q">Click <em>Tap Scan</em>, then <em>Scan finds nothing</em>. What is wrong on the imperative phone?</p>
+    <div class="opts">
+      <button class="opt">the old device rows are still on screen</button>
+      <button class="opt" data-correct>the spinner spins and Scan stays disabled</button>
+      <button class="opt">the error message is shown in the wrong colour</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The empty branch returns before <code>spinner.hide()</code> and <code>button.isEnabled = true</code>. Every handler must remember every widget, and this one forgot two.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Now click <em>Tap Scan</em> again (the event fires even though the button looks disabled). What colour is "Scanning…" on the imperative phone?</p>
+    <div class="opts">
+      <button class="opt" data-correct>red, left over from the error</button>
+      <button class="opt">the normal colour, as expected</button>
+      <button class="opt">grey, because the button is off</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why"><code>onScanTapped</code> never resets the colour. In the declarative version the colour is computed from state every time, so there is nothing to forget.</p>
+  </div>
+
+  <p>Those two bugs are the whole argument. With <em>n</em> widgets and <em>m</em> events, imperative code has <em>n × m</em> places to forget an update. Declarative code has one function from state to screen. Three rules follow, and every track in this course uses them:</p>
+  <ol>
+    <li><strong>UI is a function of state.</strong> The screen shows what the state says, nothing else (<a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a>).</li>
+    <li><strong>Single source of truth.</strong> Each piece of state lives in exactly one place. Android: "By moving state instead of duplicating it, we're ensuring there's only one source of truth" (<a href="https://developer.android.com/develop/ui/compose/state">State and Jetpack Compose</a>). Apple: "Use state as the single source of truth for a given value type that you store in a view hierarchy" (<a href="https://developer.apple.com/documentation/swiftui/state">State</a>).</li>
+    <li><strong>Derive, don't store.</strong> The status text, the button's enabled flag and the error colour are <em>computed</em> from <code>isScanning</code> and the scan result. Stored copies are how the two phones above drifted apart.</li>
+  </ol>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 232" role="img" aria-labelledby="l06-fn-title">
+      <title id="l06-fn-title">UI as a function of state. The state (filter, isScanning, foundCount) is read by the UI code, one function of state, which draws the screen. The user acts on the screen, or work finishes in the background, and that raises an event. An event handler changes the state, and the UI code runs again with the new state. The handler never edits the screen directly.</title>
+      <defs><marker id="l06-fn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="box" x="20" y="30" width="170" height="82" rx="6"/>
+      <text x="32" y="52" font-weight="600">State</text>
+      <text class="mono small" x="32" y="72">filter</text>
+      <text class="mono small" x="32" y="87">isScanning</text>
+      <text class="mono small" x="32" y="102">foundCount</text>
+      <rect class="box" x="235" y="30" width="170" height="82" rx="6"/>
+      <text x="247" y="52" font-weight="600">UI code</text>
+      <text class="small" x="247" y="72">one function of state</text>
+      <text class="small muted" x="247" y="88">Compose / SwiftUI body,</text>
+      <text class="small muted" x="247" y="102">render() on XML / UIKit</text>
+      <rect class="box" x="450" y="30" width="170" height="82" rx="6"/>
+      <text x="462" y="52" font-weight="600">Screen</text>
+      <text class="small" x="462" y="72">what the user sees</text>
+      <path class="edge" d="M190,71 L233,71" marker-end="url(#l06-fn-arrow)"/>
+      <path class="edge" d="M405,71 L448,71" marker-end="url(#l06-fn-arrow)"/>
+      <text class="small muted" x="195" y="64">reads</text>
+      <text class="small muted" x="413" y="64">draws</text>
+      <rect class="box" x="235" y="162" width="170" height="54" rx="6"/>
+      <text x="247" y="184" font-weight="600">Event handler</text>
+      <text class="small" x="247" y="203">tap, keystroke, scan done</text>
+      <path class="edge" d="M535,114 L535,189 L407,189" marker-end="url(#l06-fn-arrow)"/>
+      <text class="small muted" x="480" y="154">events</text>
+      <path class="edge" d="M233,189 L105,189 L105,114" marker-end="url(#l06-fn-arrow)"/>
+      <text class="small muted" x="118" y="154">changes state</text>
+    </svg>
+    <figcaption>Handlers only change state. The UI code is the only thing that decides what the screen shows.</figcaption>
+  </figure>
+  <p class="callout ts"><span class="label">From TypeScript</span>This is React's model, or Angular templates with signals: the template is a function of component state, and you change state, never the DOM. Compose and SwiftUI are the same idea, with different machinery underneath: Compose relies on a Kotlin compiler plugin, SwiftUI on Swift's result builders (<code>@ViewBuilder</code>). XML Views and UIKit are jQuery-era: you hold references to widgets and set their properties.</p>
+
+  <h2>2. Re-running the UI, and where side effects go</h2>
+  <p>When state changes, the framework calls your UI code again. Compose calls it <strong>recomposition</strong>: "the process of calling your composable functions again when inputs change", and it "skips the rest" whose inputs didn't change. SwiftUI re-evaluates a view's <code>body</code>: "When the value changes, SwiftUI updates the parts of the view hierarchy that depend on the value" (<a href="https://developer.apple.com/documentation/swiftui/state">Apple: State</a>).</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 296" role="img" aria-labelledby="l06-rerun-title">
+      <title id="l06-rerun-title">The UI code runs again each time state changes. At launch the state is isScanning false and foundCount null, and the screen shows the Scan button enabled and the status Tap Scan to look for devices. After the tap on Scan, the handler sets isScanning to true and foundCount to null, the UI code runs again, and the screen shows the Scan button disabled, a spinner and the status Scanning. One and a half seconds later the scan coroutine sets foundCount to 5 and isScanning to false, the UI code runs again, and the screen shows the Scan button enabled and the status Devices found: 5, which is every sample device because the filter is empty.</title>
+      <defs><marker id="l06-rerun-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="small muted" x="20" y="16">state</text>
+      <text class="small muted" x="332" y="16">screen</text>
+      <rect class="box" x="20" y="26" width="600" height="56" rx="6"/>
+      <path class="axis" d="M320,34 L320,74"/>
+      <text class="mono small" x="32" y="59">isScanning = false · foundCount = null</text>
+      <text class="small" x="332" y="59">Scan enabled · "Tap Scan to look for devices."</text>
+      <path class="edge" d="M320,84 L320,122" marker-end="url(#l06-rerun-arrow)"/>
+      <text class="small muted" x="332" y="102">tap Scan: the handler changes state,</text>
+      <text class="small muted" x="332" y="116">and the UI code runs again</text>
+      <rect class="box" x="20" y="124" width="600" height="56" rx="6"/>
+      <path class="axis" d="M320,132 L320,172"/>
+      <text class="mono small" x="32" y="157">isScanning = true · foundCount = null</text>
+      <text class="small" x="332" y="157">Scan disabled · spinner · "Scanning…"</text>
+      <path class="edge" d="M320,182 L320,220" marker-end="url(#l06-rerun-arrow)"/>
+      <text class="small muted" x="332" y="200">1.5 s later the scan finishes: state changes,</text>
+      <text class="small muted" x="332" y="214">and the UI code runs again</text>
+      <rect class="box" x="20" y="222" width="600" height="56" rx="6"/>
+      <path class="axis" d="M320,230 L320,270"/>
+      <text class="mono small" x="32" y="255">isScanning = false · foundCount = 5</text>
+      <text class="small" x="332" y="255">Scan enabled · "Devices found: 5"</text>
+    </svg>
+    <figcaption>Three renders of the same function. Nothing in between edits a widget.</figcaption>
+  </figure>
+  <p>The consequence you must design for: <strong>your UI function runs often, and you don't control when.</strong> Composables "might be re-executed as often as every frame", children "might run in any order", and a recomposition "may be skipped" (<a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a>). So the UI function must have <strong>no side effects</strong>: no starting a scan, no writing a file, no incrementing a counter. Side effects go in one of two places:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Where</th><th>Compose</th><th>SwiftUI</th><th>XML / UIKit</th></tr>
+    <tr><td>an <strong>event callback</strong> (a tap)</td><td><code>onClick = { … }</code>, plus <code>rememberCoroutineScope().launch</code> for async</td><td><code>Button(action:)</code>, plus <code>Task { }</code> for async</td><td>click listener / <code>UIAction</code>, then call <code>render()</code></td></tr>
+    <tr><td>a <strong>lifecycle-bound effect</strong> (on appear)</td><td><code>LaunchedEffect(key)</code></td><td><code>.task { }</code> / <code>.task(id:)</code></td><td><code>onCreate</code> / <code>viewDidLoad</code> (<code>viewDidLoad</code>: Lesson 04)</td></tr>
+  </table>
+  </div>
+  <p>The scan starts on a tap, so in m01 it lives in a callback. Android's guide says the same: "trigger side-effects from callbacks such as <code>onClick</code> that always execute on the UI thread" (<a href="https://developer.android.com/develop/ui/compose/mental-model">same page</a>).</p>
+  <p class="callout"><span class="label">Imperative tracks: render() is your recomposition</span>XML Views and UIKit never re-run your code for you. So the XML and UIKit screens below keep their state in a few properties and route every change through <strong>one</strong> <code>render()</code> function that sets every widget from that state. It's the declarative column of the toy, written by hand. When the team's legacy screens misbehave, the cause is usually a handler that skips <code>render()</code> and edits one widget directly.</p>
+
+  <h2>3. The data: a fake scan in shared Kotlin</h2>
+  <p>The device list comes from <code>commonMain</code>, so both apps show the same devices and the filtering rule is written once. It's the first shared code the UI calls, after m00's <code>Greeting</code>. (<code>Greeting.kt</code> and <code>Platform*.kt</code> stay; nothing uses them now, and later lessons don't need them.)</p>
+  <figure class="excerpt">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/Device.kt</figcaption>
+<pre><code><span class="elide">⋯  package</span>
+<mark>data class Device(val id: String, val name: String, val rssi: Int)</mark></code></pre>
+  </figure>
+  <figure class="excerpt">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/SampleDevices.kt</figcaption>
+<pre><code><span class="elide">⋯  package</span>
+
+// Stand-in for a real BLE scan until Lesson 13.
+<mark>object SampleDevices {</mark>
+<mark>    val all: List&lt;Device&gt; = listOf(</mark>
+        Device(id = "C4:7C:8D:6A:01:10", name = "OBD-II Adapter", rssi = -48),
+<span class="elide">⋯  four more devices</span>
+    )
+
+<mark>    fun matching(filter: String): List&lt;Device&gt; =</mark>
+<mark>        all.filter { it.name.contains(filter.trim(), ignoreCase = true) }</mark>
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><code>Device</code> is a <strong>data class</strong> (Lesson 01), so two devices with the same fields are equal. Its <code>id</code> is the device's <strong>stable identity</strong>; Lesson 07 uses it as each list row's key. The fake ids look like Android MAC addresses. On iOS, a real BLE id is a UUID the system assigns, not the device's address (Lesson 13).</li>
+    <li><code>object SampleDevices</code> is a singleton. Swift sees it as <code>SampleDevices.shared</code> (Lesson 05's name table), so Swift calls <code>SampleDevices.shared.matching(filter: query)</code>. Kotlin parameter names become Swift argument labels.</li>
+    <li><code>matching</code> is the filtering rule: a case-insensitive "contains" on the name, with the filter trimmed. An empty filter matches every device. <code>List&lt;Device&gt;</code> arrives in Swift as <code>[Device]</code>. The screen only needs how many matched, so Kotlin calls <code>.size</code> and Swift calls <code>.count</code>.</li>
+    <li>The fake scan has no delay. Waiting is the UI's job in m01. In Lesson 08 the delay moves into shared code as a <code>Flow</code>, and Lesson 13 replaces the fake with a real scanner.</li>
+  </ol>
+
+  <h2>4. Components and layout</h2>
+  <p>The m01 screen uses five kinds of component, arranged in a vertical stack. Every toolkit has the same five, under different names:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Component</th><th>Compose</th><th>XML</th><th>SwiftUI</th><th>UIKit</th></tr>
+    <tr><td>text</td><td><code>Text</code></td><td><code>TextView</code></td><td><code>Text</code></td><td><code>UILabel</code></td></tr>
+    <tr><td>text field</td><td><code>OutlinedTextField</code></td><td><code>EditText</code></td><td><code>TextField</code></td><td><code>UITextField</code></td></tr>
+    <tr><td>button</td><td><code>Button</code></td><td><code>Button</code></td><td><code>Button</code></td><td><code>UIButton</code></td></tr>
+    <tr><td>image</td><td><code>Image</code></td><td><code>ImageView</code></td><td><code>Image</code></td><td><code>UIImageView</code></td></tr>
+    <tr><td>progress</td><td><code>CircularProgressIndicator</code></td><td><code>ProgressBar</code></td><td><code>ProgressView</code></td><td><code>UIActivityIndicatorView</code></td></tr>
+  </table>
+  </div>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 332" role="img" aria-labelledby="l06-layout-title">
+      <title id="l06-layout-title">The layout of the m01 screen. A vertical stack, with a margin around it and a gap between items (16 dp and 12 dp in Compose), holds four items from top to bottom: a row with the Bluetooth icon and the title, the text field, a full-width Scan button, and a row with the progress spinner and the status text. The rest of the screen is empty until Lesson 07 adds the device list. In Compose the stack is a Column and each row is a Row. In XML it is one ConstraintLayout in which every view is pinned to the parent or to a sibling, with no nesting. In SwiftUI it is a VStack and each row is an HStack. In UIKit it is a vertical UIStackView, and each row is another, horizontal UIStackView.</title>
+      <rect class="box" x="20" y="10" width="250" height="312" rx="24"/>
+      <text class="small muted" x="36" y="38">vertical stack · margin · spacing</text>
+      <rect class="box" x="46" y="52" width="198" height="36" rx="6"/>
+      <text class="small" x="58" y="75">row: icon + title</text>
+      <rect class="box" x="46" y="100" width="198" height="34" rx="6"/>
+      <text class="small" x="58" y="121">text field</text>
+      <rect class="box" x="46" y="146" width="198" height="34" rx="6"/>
+      <text class="small" x="58" y="167">Scan button, full width</text>
+      <rect class="box" x="46" y="192" width="198" height="36" rx="6"/>
+      <text class="small" x="58" y="215">row: spinner + status text</text>
+      <text class="small muted" x="46" y="270">empty until Lesson 07 adds the list</text>
+      <text x="310" y="40" font-weight="600">The stack, per track</text>
+      <g data-part="android">
+        <rect class="box" x="310" y="56" width="310" height="48" rx="6"/>
+        <text class="title" x="322" y="76">Compose</text>
+        <text class="mono small" x="322" y="94">Column, with a Row per row</text>
+        <rect class="box" x="310" y="114" width="310" height="48" rx="6"/>
+        <text class="title" x="322" y="134">XML</text>
+        <text class="mono small" x="322" y="152">ConstraintLayout: pinned, not nested</text>
+      </g>
+      <g data-part="ios">
+        <rect class="box" x="310" y="172" width="310" height="48" rx="6"/>
+        <text class="title" x="322" y="192">SwiftUI</text>
+        <text class="mono small" x="322" y="210">VStack, with an HStack per row</text>
+        <rect class="box" x="310" y="230" width="310" height="48" rx="6"/>
+        <text class="title" x="322" y="250">UIKit</text>
+        <text class="mono small" x="322" y="268">UIStackView, with one more per row</text>
+      </g>
+    </svg>
+    <figcaption>One layout idea, four toolkits. Stacks say "children in a line, with this spacing". Constraints say "this view's edge sits this far from that neighbour's".</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="android">Android</li>
+    <li data-part="ios">iOS</li>
+  </ul>
+  <p>The status line (text, with the progress indicator beside it while a scan runs) is the part that changes. Section 5 covers it. This section is the static shape.</p>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorScreen.kt</figcaption>
+<pre><code><span class="elide">⋯  package, imports, DeviceMonitorContent's parameters</span>
+    Column(
+<mark>        modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp),</mark>
+<mark>        verticalArrangement = Arrangement.spacedBy(12.dp),</mark>
+    ) {
+        Row(
+<mark>            verticalAlignment = Alignment.CenterVertically,</mark>
+<mark>            horizontalArrangement = Arrangement.spacedBy(12.dp),</mark>
+        ) {
+<mark>            Image(</mark>
+<mark>                painter = painterResource(R.drawable.ic_bluetooth),</mark>
+<mark>                contentDescription = null,</mark>
+<mark>                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),</mark>
+                modifier = Modifier.size(32.dp),
+            )
+            Text("Device Monitor", style = MaterialTheme.typography.headlineSmall)
+        }
+<span class="elide">⋯  the field, the button and the status line</span>
+    }</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorScreen.kt</figcaption>
+<pre><code><span class="elide">⋯  the header row</span>
+        OutlinedTextField(
+<mark>            value = filter,</mark>
+<mark>            onValueChange = onFilterChange,</mark>
+            label = { Text("Device name filter") },
+            singleLine = true,
+<mark>            modifier = Modifier.fillMaxWidth(),</mark>
+        )
+<mark>        Button(onClick = onScan, enabled = !isScanning, modifier = Modifier.fillMaxWidth()) {</mark>
+            Text("Scan")
+        }
+        ScanStatus(isScanning = isScanning, foundCount = foundCount)
+    }</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</figcaption>
+<pre><code><span class="elide">⋯  package and the other imports</span>
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContent {
+<mark>            MaterialTheme {</mark>
+<mark>                DeviceMonitorScreen()</mark>
+<mark>            }</mark>
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>Column</code></strong> stacks children vertically, <code>Arrangement.spacedBy(12.dp)</code> spaces them, and <code>Row</code> does the same horizontally. <strong>Modifiers</strong> are applied in order: <code>fillMaxSize()</code>, then <code>safeDrawingPadding()</code> keeps the content out from under the system bars (with targetSdk 36 the app draws behind them, and m00's <code>enableEdgeToEdge()</code> makes them transparent; Lesson 05), then <code>padding(16.dp)</code> adds the margin.</li>
+    <li><strong><code>Image(painterResource(R.drawable.ic_bluetooth))</code></strong> draws a vector drawable from <code>res/drawable/</code> (the file is in Full files, shared by both Android tracks), tinted with the theme colour. <code>contentDescription = null</code> marks it decorative for screen readers.</li>
+    <li><strong><code>OutlinedTextField(value = filter, onValueChange = onFilterChange)</code></strong>. The field displays only what state says. A keystroke is an event, the event changes state, and the new state recomposes the field. Android now recommends the newer <code>TextFieldState</code> API for text fields (<a href="https://developer.android.com/develop/ui/compose/text/user-input">Configure text fields</a>). This lesson uses value + callback because it shows hoisting plainly (section 5) and matches SwiftUI's binding.</li>
+    <li><strong><code>Button(onClick = onScan, enabled = !isScanning)</code></strong>. <code>enabled</code> is the toy's <code>buttonEnabled</code>, derived from state. <code>Text("Scan")</code> is the button's content.</li>
+    <li><strong><code>MaterialTheme { … }</code></strong> in <code>MainActivity</code> supplies the colour scheme, typography and shapes that Material components read, including <code>MaterialTheme.colorScheme.primary</code> on the icon. Without it they still draw, in Material's built-in light defaults; the wrapper is where an app sets its own.</li>
+  </ol>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt">
+    <figcaption class="path">androidApp/build.gradle.kts</figcaption>
+<pre><code><span class="elide">⋯  plugins, android { namespace, compileSdk, defaultConfig }</span>
+    buildFeatures { viewBinding = true }
+}
+
+dependencies {
+    implementation(project(":shared"))
+<span class="elide">⋯  core-ktx and appcompat, as in m00</span>
+<mark>    implementation("androidx.constraintlayout:constraintlayout:2.2.2")</mark>
+<mark>    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")</mark>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/res/layout/activity_main.xml</figcaption>
+<pre><code>&lt;FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+<mark>    android:fitsSystemWindows="true"&gt;</mark>
+
+    &lt;androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+<mark>        android:padding="16dp"&gt;</mark>
+
+        &lt;ImageView
+            android:id="@+id/headerIcon"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+<mark>            android:contentDescription="@null"</mark>
+            android:src="@drawable/ic_bluetooth"
+<span class="elide">⋯  constraints</span>
+<mark>            app:tint="?attr/colorAccent" /&gt;</mark>
+<span class="elide">⋯  the title, the field, the button, the status</span></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/res/layout/activity_main.xml</figcaption>
+<pre><code><span class="elide">⋯  the header, the field and the button</span>
+        &lt;TextView
+            android:id="@+id/title"
+<mark>            android:layout_width="0dp"</mark>
+<span class="elide">⋯  height, margin, text, appearance</span>
+<mark>            app:layout_constraintStart_toEndOf="@id/headerIcon"</mark>
+<mark>            app:layout_constraintEnd_toEndOf="parent"</mark>
+<mark>            app:layout_constraintTop_toTopOf="@id/headerIcon"</mark>
+<mark>            app:layout_constraintBottom_toBottomOf="@id/headerIcon" /&gt;</mark>
+
+        &lt;EditText
+            android:id="@+id/filterInput"
+<span class="elide">⋯  width, margin, hint, autofill</span>
+<mark>            android:inputType="text"</mark>
+<mark>            app:layout_constraintTop_toBottomOf="@id/headerIcon" /&gt;</mark>
+<span class="elide">⋯  the button and the status</span></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/res/layout/activity_main.xml</figcaption>
+<pre><code><span class="elide">⋯  the title, the field and the button</span>
+        &lt;ProgressBar
+            android:id="@+id/progress"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            app:layout_constraintStart_toStartOf="parent"
+<mark>            app:layout_constraintTop_toTopOf="@id/statusText"</mark>
+<mark>            app:layout_constraintBottom_toBottomOf="@id/statusText" /&gt;</mark>
+
+        &lt;TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+<mark>            android:layout_marginStart="8dp"</mark>
+            android:layout_marginTop="12dp"
+            app:layout_constraintStart_toEndOf="@id/progress"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/scanButton"
+<mark>            app:layout_goneMarginStart="0dp" /&gt;</mark></code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>ConstraintLayout.</strong> Each view pins its edges to the parent or to a sibling (<code>layout_constraintTop_toBottomOf="@id/headerIcon"</code>). <code>layout_width="0dp"</code> means "match constraints": stretch between the two anchors. The title is centred on the icon by pinning its top and bottom to the icon's. The status text sits 8dp after the progress bar (<code>layout_marginStart</code>). When the bar is <code>GONE</code>, <code>layout_goneMarginStart="0dp"</code> replaces that margin, so the text lines up with the field above it.</li>
+    <li><strong>The <code>FrameLayout</code> with <code>fitsSystemWindows="true"</code></strong> comes from m00. It pads everything clear of the system bars, and the 16dp padding on the ConstraintLayout inside adds the margin.</li>
+    <li><strong>The icon</strong> is the same vector drawable as in Compose. <code>app:tint="?attr/colorAccent"</code> tints it with the theme's accent colour through AppCompat's <code>app:</code> attribute, and <code>contentDescription="@null"</code> marks it decorative.</li>
+    <li><strong>ViewBinding.</strong> <code>buildFeatures { viewBinding = true }</code> makes Gradle generate a class from each layout file: <code>activity_main.xml</code> becomes <code>ActivityMainBinding</code>, with one typed field per view id (<code>binding.scanButton</code>). No <code>findViewById</code>, no casts. <code>constraintlayout</code> and <code>lifecycle-runtime-ktx</code> (section 5) are new dependencies.</li>
+    <li>AppCompat buttons render their text in capitals ("SCAN"), whatever the <code>android:text</code> says. UI-automation tools and tests see the capitalised text.</li>
+  </ol>
+  </div>
+  </div>
+  <p data-both-only="android" class="callout ts"><span class="label">XML vs Compose · what changed and why</span>Compose describes the layout as nested calls (<code>Column { Row { … } }</code>) and the framework measures them. XML says where each view sits in relation to its neighbours, in a separate file, and your Kotlin looks the views up through a generated binding.</p>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorView.swift</figcaption>
+<pre><code><span class="elide">⋯  imports and the state</span>
+    var body: some View {
+<mark>        VStack(alignment: .leading, spacing: 12) {</mark>
+<mark>            HStack(spacing: 12) {</mark>
+<mark>                Image(systemName: "antenna.radiowaves.left.and.right")</mark>
+                    .font(.title)
+<mark>                    .foregroundStyle(.tint)</mark>
+                Text("Device Monitor")
+                    .font(.title2)
+            }
+<span class="elide">⋯  the field, the button, the status line</span>
+            Spacer()
+        }
+<mark>        .padding()</mark>
+    }</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorView.swift</figcaption>
+<pre><code><span class="elide">⋯  the header</span>
+<mark>            TextField("Device name filter", text: $filter)</mark>
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+<mark>            Button(action: scan) {</mark>
+                Text("Scan")
+<mark>                    .frame(maxWidth: .infinity)</mark>
+            }
+            .buttonStyle(.borderedProminent)
+<mark>            .disabled(isScanning)</mark>
+            ScanStatus(isScanning: isScanning, foundCount: foundCount)</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/iOSApp.swift</figcaption>
+<pre><code><span class="elide">⋯  import</span>
+@main
+struct iOSApp: App {
+    var body: some Scene {
+        WindowGroup {
+<mark>            DeviceMonitorView()</mark>
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>VStack(alignment: .leading, spacing: 12)</code></strong> stacks children vertically; <code>HStack</code> does it horizontally. <code>.padding()</code> uses the system default inset. <strong><code>Spacer()</code></strong> takes all the leftover height and pushes the content to the top. Without it the stack would sit in the middle of the screen.</li>
+    <li><strong><code>Image(systemName:)</code></strong> is an SF Symbol: a vector icon built into iOS that scales with the font size. <code>.foregroundStyle(.tint)</code> colours it with the app's accent colour.</li>
+    <li><strong><code>TextField(…, text: $filter)</code></strong>. <code>$filter</code> is a <strong>Binding</strong>, a read-write reference to the state. The field shows <code>filter</code> and writes keystrokes back into it. It's Compose's <code>value</code> + <code>onValueChange</code> in one argument.</li>
+    <li><strong><code>Button(action: scan) { Text("Scan").frame(maxWidth: .infinity) }</code></strong>. The frame sits on the <em>label</em>. Put <code>.frame(maxWidth: .infinity)</code> on the <code>Button</code> instead, and you get a small centred button in a wide invisible frame (see the gotcha in section 7).</li>
+    <li><strong><code>.disabled(isScanning)</code></strong> is derived, like Compose's <code>enabled = !isScanning</code>.</li>
+    <li><strong>The app file</strong> now shows <code>DeviceMonitorView()</code> directly. m00's <code>ContentView.swift</code> is deleted. Lesson 07 adds navigation around this view.</li>
+  </ol>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  imports, the state and the widgets</span>
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let icon = UIImageView(image: UIImage(systemName: "antenna.radiowaves.left.and.right"))
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 28)
+        icon.tintColor = .tintColor
+<mark>        icon.setContentHuggingPriority(.required, for: .horizontal)</mark>
+        let titleLabel = UILabel()
+        titleLabel.text = "Device Monitor"
+        titleLabel.font = .preferredFont(forTextStyle: .title2)
+<span class="elide">⋯  the field, the button and the status label</span></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  the widgets</span>
+<mark>        let headerRow = UIStackView(arrangedSubviews: [icon, titleLabel])</mark>
+        headerRow.spacing = 12
+        headerRow.alignment = .center
+<mark>        let statusRow = UIStackView(arrangedSubviews: [spinner, statusLabel])</mark>
+        statusRow.spacing = 8
+<mark>        let stack = UIStackView(arrangedSubviews: [headerRow, filterField, scanButton, statusRow])</mark>
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.spacing = 12
+<mark>        stack.translatesAutoresizingMaskIntoConstraints = false</mark>
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+<mark>            stack.topAnchor.constraint(equalTo: view.layoutMarginsGuide.topAnchor),</mark>
+<mark>            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),</mark>
+<mark>            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),</mark>
+        ])
+        render()</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/SceneDelegate.swift</figcaption>
+<pre><code><span class="elide">⋯  imports and the window property</span>
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
+               options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
+<mark>        window.rootViewController = DeviceMonitorViewController()</mark>
+        window.makeKeyAndVisible()
+        self.window = window
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>Layout: one vertical <code>UIStackView</code></strong> holds the header row, the field, the button and the status row. A <code>UIStackView</code> arranges its <em>arranged subviews</em> for you, so only the outer stack needs constraints. It's pinned to the layout margins (which include the safe area) on three sides. There's no bottom constraint, so the stack is only as tall as its content and sits at the top.</li>
+    <li><strong><code>translatesAutoresizingMaskIntoConstraints = false</code></strong> on the stack. Without it, UIKit adds constraints of its own that conflict with yours (Lesson 05's label did the same).</li>
+    <li><strong>Content hugging.</strong> A horizontal stack with the default <code>fill</code> distribution has to stretch one arranged view to use the leftover width. It stretches the one with the lowest content-hugging priority, and on a tie it goes by position in <code>arrangedSubviews</code>. A <code>UIImageView</code> and a <code>UILabel</code> made in code both default to 250, so ours chose the icon, the first view: it stretched across the whole header row and pushed the title to the right edge (see the gotcha in section 7). <code>setContentHuggingPriority(.required, for: .horizontal)</code> makes the icon resist stretching, so the stack stretches the title label instead.</li>
+    <li><strong><code>UIButton(configuration: .filled())</code></strong> (declared with the widgets) is the modern button API. In a vertical stack with <code>alignment = .fill</code> it's as wide as the stack. <code>UIAction { [weak self] _ in self?.scan() }</code> avoids a retain cycle: the view controller owns the button, so the button's closure must not own the view controller.</li>
+    <li><strong>The scene delegate</strong> makes this view controller the window's root. There's no navigation controller yet, so there's no navigation bar and the title is a label in the stack. Lesson 07 adds the <code>UINavigationController</code>. <code>ViewController.swift</code> (m00's greeting screen) is deleted.</li>
+  </ol>
+  </div>
+  </div>
+  <p data-both-only="ios" class="callout ts"><span class="label">UIKit vs SwiftUI · what changed and why</span>SwiftUI's stacks are nested values, like Compose's. UIKit's are objects you create, configure and add to a parent, then pin with constraints. In SwiftUI the filter is state bound to the field. In UIKit the text field owns it, and you read it when you need it.</p>
+
+  <h2>5. State, events and the status line</h2>
+  <p>Three pieces of state run the whole screen: the filter text, whether a scan is running, and how many devices the last scan found (<code>null</code> before the first scan, so the screen can tell "never scanned" from "scanned, found nothing"). On Compose, a fourth piece is the coroutine scope that runs the scan. Everything the user sees is derived from them.</p>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 214" role="img" aria-labelledby="l06-hoist-title">
+      <title id="l06-hoist-title">State hoisting in the Compose screen. DeviceMonitorScreen is stateful: it owns filter, foundCount and isScanning, and it starts the scan. It passes values down to DeviceMonitorContent, which is stateless and only draws what it is given. DeviceMonitorContent reports events back up through the lambdas onFilterChange and onScan.</title>
+      <defs><marker id="l06-hoist-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g data-part="android">
+        <rect class="box" x="130" y="14" width="380" height="62" rx="6"/>
+        <text class="mono title" x="144" y="36">DeviceMonitorScreen</text>
+        <text class="small" x="144" y="56">stateful: owns the state and starts the scan</text>
+        <rect class="box" x="130" y="136" width="380" height="62" rx="6"/>
+        <text class="mono title" x="144" y="158">DeviceMonitorContent</text>
+        <text class="small" x="144" y="178">stateless: draws what it is given, reports events</text>
+      </g>
+      <path class="edge" d="M250,78 L250,134" marker-end="url(#l06-hoist-arrow)"/>
+      <text class="small muted" x="240" y="110" text-anchor="end">state goes down</text>
+      <path class="edge" d="M390,134 L390,78" marker-end="url(#l06-hoist-arrow)"/>
+      <text class="small muted" x="400" y="110">events go up (onFilterChange, onScan)</text>
+    </svg>
+    <figcaption>The screen's state lives in one place. The content function never changes it, so it can't drift.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="android">Android</li>
+  </ul>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorScreen.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+@Composable
+fun DeviceMonitorScreen() {
+<mark>    var filter by rememberSaveable { mutableStateOf("") }</mark>
+<mark>    var foundCount by rememberSaveable { mutableStateOf&lt;Int?&gt;(null) }</mark>
+<mark>    var isScanning by remember { mutableStateOf(false) }</mark>
+<mark>    val scope = rememberCoroutineScope()</mark>
+
+    DeviceMonitorContent(
+<span class="elide">⋯  filter, onFilterChange, isScanning, foundCount</span>
+<mark>        onScan = {</mark>
+<mark>            val query = filter</mark>
+<mark>            isScanning = true</mark>
+<mark>            foundCount = null</mark>
+<mark>            scope.launch {</mark>
+<mark>                delay(1_500)</mark>
+<mark>                foundCount = SampleDevices.matching(query).size</mark>
+<mark>                isScanning = false</mark>
+            }
+        },
+    )
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorScreen.kt</figcaption>
+<pre><code><span class="elide">⋯  the screen and the content</span>
+@Composable
+private fun ScanStatus(isScanning: Boolean, foundCount: Int?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+<mark>        when {</mark>
+            isScanning -&gt; {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("Scanning…")
+            }
+            foundCount == null -&gt; Text("Tap Scan to look for devices.")
+            foundCount == 0 -&gt; Text(
+                "No devices found. Try another filter.",
+<mark>                color = MaterialTheme.colorScheme.error,</mark>
+            )
+            else -&gt; Text("Devices found: $foundCount")
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>var filter by rememberSaveable { mutableStateOf("") }</code></strong>, read inside out. <code>mutableStateOf</code> creates an observable value: "Any changes to <code>value</code> schedule recomposition of any composable functions that read <code>value</code>". <code>remember</code> keeps it across recompositions. <code>rememberSaveable</code> also keeps it "across activity or process recreation", such as rotation (<a href="https://developer.android.com/develop/ui/compose/state">State and Jetpack Compose</a>). <code>by</code> is a Kotlin property delegate, so you write <code>filter</code> instead of <code>filter.value</code>.</li>
+    <li><strong><code>foundCount</code> is an <code>Int?</code></strong>, with <code>null</code> meaning "never scanned". <code>rememberSaveable</code> saves any type a <code>Bundle</code> holds (strings, numbers, Parcelables) on its own, and an <code>Int?</code> is one. A Kotlin <code>Device</code> from shared code isn't: it would need a custom <code>Saver</code>. Lesson 07 needs the rows themselves and meets that limit then.</li>
+    <li><strong><code>isScanning</code> uses plain <code>remember</code> on purpose.</strong> If the Activity is recreated mid-scan, the scan coroutine is cancelled (next point). A saved <code>true</code> would leave the screen saying "Scanning…" forever.</li>
+    <li><strong><code>rememberCoroutineScope()</code></strong> gives a scope tied to this composable's place on screen. It's cancelled when the composable leaves (rotation, navigation). That's how a callback starts async work in Compose (<a href="https://developer.android.com/develop/ui/compose/side-effects">Side-effects in Compose</a>). <code>delay</code> and <code>launch</code> come from kotlinx.coroutines, which arrives transitively with the Compose runtime.</li>
+    <li><strong><code>onScan</code></strong> is the event handler. It changes state synchronously first (<code>isScanning = true</code>, result cleared), and only then launches the slow part. The button is disabled from the very next frame, so a double tap can't start two scans.</li>
+    <li><strong><code>val query = filter</code></strong> captures the filter <em>at tap time</em>. Reading <code>filter</code> after the 1.5 s <code>delay</code> would see whatever the user typed meanwhile.</li>
+    <li><strong>Stateful wrapper, stateless content.</strong> <code>DeviceMonitorScreen</code> owns state. <code>DeviceMonitorContent</code> only receives values and lambdas: "state goes down … events go up". That's <strong>state hoisting</strong> and <strong>unidirectional data flow</strong> (<a href="https://developer.android.com/develop/ui/compose/state">same page</a>). In Lesson 08 a shared ViewModel replaces the wrapper, and <code>DeviceMonitorContent</code> doesn't change.</li>
+    <li><strong><code>ScanStatus</code></strong> is the toy's <code>render()</code>: a <code>when</code> over state. The error is just one branch with an error colour, and the progress indicator only exists while <code>isScanning</code> is true.</li>
+  </ol>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+class MainActivity : AppCompatActivity() {
+<mark>    // Screen state lives in fields; render() copies it into the views.</mark>
+<mark>    private var foundCount: Int? = null</mark>
+<mark>    private var isScanning = false</mark>
+
+<mark>    private lateinit var binding: ActivityMainBinding</mark>
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+<span class="elide">⋯  enableEdgeToEdge(), super.onCreate()</span>
+<mark>        binding = ActivityMainBinding.inflate(layoutInflater)</mark>
+        setContentView(binding.root)
+<mark>        foundCount = savedInstanceState?.getInt("foundCount", -1)?.takeIf { it &gt;= 0 }</mark>
+<mark>        binding.scanButton.setOnClickListener { scan(binding.filterInput.text.toString()) }</mark>
+<mark>        render()</mark>
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+<mark>        foundCount?.let { outState.putInt("foundCount", it) }</mark>
+    }
+<span class="elide">⋯  scan() and render()</span></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</figcaption>
+<pre><code><span class="elide">⋯  the state, onCreate and onSaveInstanceState</span>
+    private fun scan(query: String) {
+<mark>        isScanning = true</mark>
+<mark>        foundCount = null</mark>
+<mark>        render()</mark>
+<mark>        lifecycleScope.launch {</mark>
+            delay(1_500)
+            foundCount = SampleDevices.matching(query).size
+            isScanning = false
+            render()
+        }
+    }
+
+    // The one place that touches views: every state change ends here.
+    private fun render() {
+<mark>        binding.scanButton.isEnabled = !isScanning</mark>
+        binding.progress.visibility = if (isScanning) View.VISIBLE else View.GONE
+        binding.statusText.text = when {
+            isScanning -&gt; "Scanning…"
+            foundCount == null -&gt; "Tap Scan to look for devices."
+            foundCount == 0 -&gt; "No devices found. Try another filter."
+            else -&gt; "Devices found: $foundCount"
+        }
+<mark>        binding.statusText.setTextColor(if (foundCount == 0) Color.RED else Color.DKGRAY)</mark>
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>State is two fields:</strong> <code>foundCount</code> and <code>isScanning</code>. The views are a <em>copy</em> of it, and <code>render()</code> is the only function that writes to views. That's the declarative column of the section 1 toy, by hand. <code>binding</code> is a <code>lateinit</code> field: an Activity's views live as long as the Activity does.</li>
+    <li><strong><code>onSaveInstanceState</code> + <code>getInt</code></strong> is <code>rememberSaveable</code> by hand: the count survives rotation. <code>Bundle.putInt</code> takes a non-null <code>Int</code>, so the code only writes the key when there's a count, and reads it back with a default of <code>-1</code>. The <code>EditText</code> saves its own text, because it has an id.</li>
+    <li><strong><code>scan()</code></strong> sets state and renders <em>synchronously</em>, then launches the slow part in the Activity's <code>lifecycleScope</code>. That scope is cancelled when the Activity is destroyed, and rotation destroys the Activity (section 6). <code>lifecycleScope</code> is part of the Lifecycle library, which we declare (as <code>lifecycle-runtime-ktx</code>) because our code uses it directly. Since Lifecycle 2.8 that <code>-ktx</code> artifact is empty: it pulls in <code>lifecycle-runtime</code>, which now holds its Kotlin APIs.</li>
+    <li><strong>The query is captured at tap time</strong>: <code>scan(binding.filterInput.text.toString())</code> reads the text before the delay starts.</li>
+    <li><strong>The status text and its colour</strong> are derived inside <code>render()</code>, from the two fields, every time. <code>Color.RED</code> for the error is a hard-coded colour, fine for a demo.</li>
+  </ol>
+  </div>
+  </div>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorView.swift</figcaption>
+<pre><code><span class="elide">⋯  imports</span>
+struct DeviceMonitorView: View {
+<mark>    @State private var filter = ""</mark>
+<mark>    @State private var foundCount: Int? = nil</mark>
+<mark>    @State private var isScanning = false</mark>
+<span class="elide">⋯  body</span>
+<mark>    private func scan() {</mark>
+<mark>        let query = filter</mark>
+<mark>        isScanning = true</mark>
+<mark>        foundCount = nil</mark>
+<mark>        Task {</mark>
+<mark>            try? await Task.sleep(for: .seconds(1.5))</mark>
+<mark>            foundCount = SampleDevices.shared.matching(filter: query).count</mark>
+<mark>            isScanning = false</mark>
+        }
+    }
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorView.swift</figcaption>
+<pre><code><span class="elide">⋯  DeviceMonitorView</span>
+private struct ScanStatus: View {
+    let isScanning: Bool
+    let foundCount: Int?
+
+<mark>    var body: some View {</mark>
+<mark>        if isScanning {</mark>
+            HStack {
+                ProgressView()
+                Text("Scanning…")
+            }
+        } else if let foundCount {
+            if foundCount == 0 {
+                Text("No devices found. Try another filter.")
+<mark>                    .foregroundStyle(.red)</mark>
+            } else {
+                Text("Devices found: \(foundCount)")
+            }
+        } else {
+            Text("Tap Scan to look for devices.")
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>@State private var</code></strong>: "SwiftUI manages the property's storage. When the value changes, SwiftUI updates the parts of the view hierarchy that depend on the value" (<a href="https://developer.apple.com/documentation/swiftui/state">Apple: State</a>). The <code>struct</code> itself is recreated all the time; the state isn't. Apple says to declare it <code>private</code> "in the highest view in the view hierarchy that needs access".</li>
+    <li><strong><code>scan()</code></strong> changes state synchronously, then starts a <code>Task</code> for the wait. A <code>View</code> is <code>@MainActor</code>, so the <code>Task</code> inherits the main actor, and the writes after <code>await</code> happen on the main thread. It's an unstructured task (Lesson 02): leaving the screen doesn't cancel it, which is harmless on the only screen. Lesson 08 moves the scan into a ViewModel that owns its lifetime.</li>
+    <li><strong><code>let query = filter</code></strong> captures the filter at tap time.</li>
+    <li><strong><code>ScanStatus</code></strong> is the toy's <code>render()</code>, an <code>if</code>/<code>else</code> over state. <code>foundCount: Int?</code> uses <code>nil</code> for "never scanned". It takes plain values, not the state itself: the <code>@State</code> lives in the parent, and the parent passes values down. That's Compose's hoisting, without the lambdas, because here the parent is the only writer.</li>
+    <li><strong>A <code>View</code>'s <code>body</code> has no side effects.</strong> The only place the state changes is <code>scan()</code>, called from the button's action.</li>
+  </ol>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  viewDidLoad</span>
+<mark>    private func scan() {</mark>
+<mark>        let query = filterField.text ?? ""</mark>
+<mark>        isScanning = true</mark>
+<mark>        foundCount = nil</mark>
+<mark>        render()</mark>
+<mark>        Task {</mark>
+<mark>            try? await Task.sleep(for: .seconds(1.5))</mark>
+<mark>            foundCount = SampleDevices.shared.matching(filter: query).count</mark>
+            isScanning = false
+            render()
+        }
+    }</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceMonitorViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  viewDidLoad and scan()</span>
+    // The one place that touches views: every state change ends here.
+    private func render() {
+<mark>        scanButton.isEnabled = !isScanning</mark>
+        if isScanning { spinner.startAnimating() } else { spinner.stopAnimating() }
+        spinner.isHidden = !isScanning
+        if isScanning {
+            statusLabel.text = "Scanning…"
+        } else if let foundCount {
+            statusLabel.text = foundCount == 0
+                ? "No devices found. Try another filter."
+                : "Devices found: \(foundCount)"
+        } else {
+            statusLabel.text = "Tap Scan to look for devices."
+        }
+<mark>        statusLabel.textColor = foundCount == 0 ? .systemRed : .label</mark>
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>State is two properties</strong>, <code>foundCount</code> and <code>isScanning</code>. The widgets are a copy, and only <code>render()</code> writes to them: the declarative discipline by hand. (The filter text lives in the <code>UITextField</code> itself, and <code>scan()</code> reads it once.)</li>
+    <li><strong><code>scan()</code></strong> changes state and renders synchronously, then starts a <code>Task</code>. <code>UIViewController</code> is <code>@MainActor</code>, so the task's code runs on the main thread after <code>await</code> too. Like the SwiftUI task, it isn't cancelled when the screen goes away.</li>
+    <li><strong><code>render()</code></strong> sets <em>every</em> widget from state, every time. The spinner is started or stopped and shown or hidden; a hidden view inside a <code>UIStackView</code> takes no space, so the status label sits flush left when nothing is scanning.</li>
+    <li><strong>The status label's colour</strong> is set on every render too: red when the count is zero, the normal label colour otherwise. Setting it only in the error branch would leave it red for the next scan, exactly the toy's bug.</li>
+  </ol>
+  </div>
+  </div>
+  <p data-both-only="android" class="callout ts"><span class="label">XML vs Compose · what changed and why</span>Same state, same rules, different enforcement. Compose re-runs <code>DeviceMonitorContent</code> whenever state changes, so a forgotten update can't happen. In XML, nothing stops a click listener from setting <code>statusText</code> directly and skipping <code>render()</code>. The <code>rememberSaveable</code> line is three pieces in XML (the field, <code>onCreate</code>, <code>onSaveInstanceState</code>).</p>
+  <p data-both-only="ios" class="callout ts"><span class="label">UIKit vs SwiftUI · what changed and why</span>SwiftUI's <code>@State</code> plus a body that reads it replaces UIKit's properties, <code>render()</code>, and all the view setup in <code>viewDidLoad</code>. The scan function is nearly identical on both.</p>
+
+  <h2>6. What survives what</h2>
+  <p>"Local state" means state owned by the screen, so it dies when the screen does. We ran the m01 builds and checked what rotation does:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>After…</th><th>Compose</th><th>XML</th><th>SwiftUI / UIKit</th></tr>
+    <tr><td>rotating, result on screen</td><td>filter and result kept (saved state)</td><td>filter and result kept (saved state)</td><td>kept: iOS doesn't recreate screens on rotation</td></tr>
+    <tr><td>rotating <em>during</em> a scan</td><td colspan="2">the scan is <strong>silently cancelled</strong> and the screen returns to "Tap Scan to look for devices." (the filter text stays)</td><td>the scan completes</td></tr>
+  </table>
+  </div>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · Android forgets a running operation on rotation</span>
+    Rotation recreates the Activity (Lesson 03). That cancels the scope running the scan, and only explicitly saved values come back. For a fake scan that's an annoyance. For a BLE connection in Lesson 14 it's a dropped device. The fix isn't more saved state: move the operation <em>out of the screen</em>, into a ViewModel that survives configuration changes. That's Lesson 08.
+  </div>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · Compose: plain <code>remember</code> doesn't survive rotation</span>
+    Swap <code>rememberSaveable</code> for <code>remember</code> on the filter, and rotating the phone empties the field: <code>remember</code> keeps a value across recompositions, and only <code>rememberSaveable</code> keeps it "across activity or process recreation" (<a href="https://developer.android.com/develop/ui/compose/state">State and Jetpack Compose</a>).
+  </div>
+
+  <h2>7. What actually happens</h2>
+  <p>We built m01 with the brief below (Kotlin 2.4.21, AGP 9.4.1, Compose BOM 2026.09.00, Xcode 26.2) and ran it on the Android 16 emulator and the iOS 26.2 simulator. Tap Scan: the button greys out and "Scanning…" shows with a spinner for 1.5 s. Then "Devices found: 5", because an empty filter matches all five sample devices. A filter of <code>sens</code> finds one device, and <code>zzz</code> shows the red error with the button enabled again.</p>
+  <div class="shots">
+    <figure><img src="../assets/l06/android-scanning.png" alt="Android app with a disabled Scan button and a spinner next to Scanning…"><figcaption>Compose · during the scan</figcaption></figure>
+    <figure><img src="../assets/l06/android-error.png" alt="Android app with filter zzz showing a red No devices found message"><figcaption>Compose · filter "zzz"</figcaption></figure>
+    <figure><img src="../assets/l06/ios-found.png" alt="iOS app with filter sens showing Devices found: 1"><figcaption>SwiftUI · filter "sens"</figcaption></figure>
+    <figure><img src="../assets/l06/ios-error.png" alt="iOS app with filter zzz showing a red No devices found message"><figcaption>SwiftUI · filter "zzz"</figcaption></figure>
+  </div>
+  <p><strong>m01 is a natural stop.</strong> It's done when both apps build and the screen behaves as above. Commit it before the next lesson, which starts from this state.</p>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · layout surprises we hit</span>
+    <ul>
+      <li><strong>SwiftUI:</strong> <code>Button("Scan") { … }.frame(maxWidth: .infinity)</code> rendered a small centred button. The frame belongs on the label inside the button.</li>
+      <li><strong>UIKit:</strong> the Bluetooth icon stretched across the whole header row, and the title sat at the right edge, until we raised the icon's content-hugging priority.</li>
+      <li><strong>XML:</strong> AppCompat buttons render their text in capitals ("SCAN"). UI-automation tools and tests see the capitalised text.</li>
+    </ul>
+  </div>
+
+  <div class="callout ask-agent">
+    <span class="label">Ask your agent</span>
+    Ask your agent to explain what happens, step by step, between your tap on Scan and the moment "Devices found: 5" appears on your track. Have it name each state change and each re-render (or <code>render()</code> call). Then ask: "What would change if the scan took 30 seconds and I rotated the phone?"
+  </div>
+
+  <h2 id="retrieval-checks">Retrieval checks</h2>
+  <p>Answer from memory, without scrolling up.</p>
+  <div class="quiz mcq">
+    <p class="q">The status line says "Devices found: 3". Where should that string live?</p>
+    <div class="opts">
+      <button class="opt">in its own state variable, set after a scan</button>
+      <button class="opt" data-correct>nowhere: computed from the count on each render</button>
+      <button class="opt">in the shared module, next to SampleDevices</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">It's derived state. A stored copy is a second source of truth that can go stale, like the toy's red "Scanning…".</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Why must a composable or a SwiftUI <code>body</code> never start a scan directly?</p>
+    <div class="opts">
+      <button class="opt">it runs on a background thread</button>
+      <button class="opt" data-correct>it may run many times, in any order</button>
+      <button class="opt">it cannot call shared Kotlin code</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Recomposition / re-evaluation is frequent and can be skipped. Side effects go in callbacks or lifecycle-bound effects (<code>LaunchedEffect</code>, <code>.task</code>).</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Compose: you rotate the phone while a scan is running. What does the screen show afterwards?</p>
+    <div class="opts">
+      <button class="opt">Scanning… with the spinner</button>
+      <button class="opt" data-correct>Tap Scan to look for devices.</button>
+      <button class="opt">Devices found: 0</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Rotation recreates the Activity and cancels the scan's coroutine. <code>isScanning</code> uses plain <code>remember</code>, so it starts again as <code>false</code>, and the result was cleared when the scan started.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">In the XML and UIKit screens, a new Clear button should clear the result. What does its handler do?</p>
+    <div class="opts">
+      <button class="opt">clears the status widget and resets the label</button>
+      <button class="opt" data-correct>sets the count to null, then calls render()</button>
+      <button class="opt">rebuilds the whole screen from the layout</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Change state, then render. Editing widgets directly is exactly how the imperative phone got stuck.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">SwiftUI: where does <code>.frame(maxWidth: .infinity)</code> go to make the Scan button full width?</p>
+    <div class="opts">
+      <button class="opt">on the Button itself</button>
+      <button class="opt" data-correct>on the Text label inside the Button</button>
+      <button class="opt">on the VStack around it</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The button's tappable, styled area is its label. A frame on the <code>Button</code> only makes a wider invisible box around a small button.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">XML track: a view in a ConstraintLayout has <code>layout_width="0dp"</code>. What does it mean?</p>
+    <div class="opts">
+      <button class="opt">the view is invisible</button>
+      <button class="opt" data-correct>match constraints: stretch between its two anchors</button>
+      <button class="opt">wrap the view's content</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">In a ConstraintLayout, <code>0dp</code> means "match constraints". The view takes the space between the anchors you gave it. <code>wrap_content</code> is the one that wraps.</p>
+  </div>
+
+  <h3>Mixed review (interleaved)</h3>
+  <div class="quiz mcq">
+    <p class="q">Swift calls <code>SampleDevices.shared.matching(filter:)</code>. What is <code>SampleDevices</code> in Kotlin? (Lesson 05)</p>
+    <div class="opts">
+      <button class="opt">a class with a companion</button>
+      <button class="opt" data-correct>an object declaration</button>
+      <button class="opt">a top-level function file</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">A Kotlin <code>object</code> appears in Swift as its single instance, <code>.shared</code>.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">A <code>Task { }</code> started in a SwiftUI button action runs its code after <code>await</code> on which actor? (Lesson 02 introduced <code>Task</code> and <code>@MainActor</code>)</p>
+    <div class="opts">
+      <button class="opt" data-correct>the main actor, inherited from View</button>
+      <button class="opt">a background actor, chosen at random</button>
+      <button class="opt">no actor, because it is unstructured</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why"><code>Task { }</code> inherits the caller's actor isolation. <code>Task.detached</code> doesn't.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">What does <code>delay(1_500)</code> do to the thread it runs on? (Lesson 01)</p>
+    <div class="opts">
+      <button class="opt">blocks it for 1.5 s</button>
+      <button class="opt" data-correct>suspends the coroutine and leaves the thread free</button>
+      <button class="opt">moves the coroutine to a background thread</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why"><code>delay</code> is a suspending function: it parks the coroutine and resumes it later, and the thread keeps running other work, here the UI.</p>
+  </div>
+
+  <h2 id="unaided-exercise">Unaided exercise</h2>
+  <div class="callout exercise">
+    <span class="label">Unaided exercise (no agent, on your m01 build)</span>
+    <ol>
+      <li><strong>Fix the toy on paper.</strong> Rewrite the imperative <code>onResults</code> so it can't leave the spinner running. Then add a third event, "Bluetooth turned off", to <em>both</em> columns. Count the lines each version needed. Which one forced you to think about every widget?</li>
+      <li><strong>A Clear button.</strong> Add a "Clear" button that empties the filter and the result. Write it on your track, then count the lines that touch a widget. Compose/SwiftUI: there should be none. XML/UIKit: the <code>render()</code> call, plus clearing the text field, which owns its own text on both tracks.</li>
+      <li><strong>Say what was scanned.</strong> Make the status line read <code>Devices found: 1 for "sens"</code>. Which new piece of state do you need? Why can't the status line read <code>filter</code> directly? Check your answer by typing in the field after a scan.</li>
+    </ol>
+  </div>
+
+  <h2 id="agent-brief">Agent brief</h2>
+  <p>Hand this to your coding agent, telling it your tracks. Then read its code against the walkthroughs above, run both apps yourself, and do the unaided exercise.</p>
+  <div class="callout brief copy-wrap">
+<pre class="brief-text">Lesson source: https://phongna-inn.github.io/carmd-kmp-course/lessons/06-declarative-ui-components.html
+Before anything else, download the lesson and the reference pages it links, then read
+them in full. Don't use a summarising web fetch; it can leave out code.
+  mkdir -p .course    # in my workspace root, not inside demo/
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/lessons/06-declarative-ui-components.html" -o .course/lesson-06.html
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/reference/declarative-ui-cheatsheet.html" -o .course/ref-declarative-ui-cheatsheet.html
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/reference/glossary.html" -o .course/ref-glossary.html
+Use these files to answer my questions about this lesson without asking me for context.
+Then build what follows, using the lesson's "Full files" for my tracks exactly,
+except where the brief below says otherwise.
+
+Lesson 06 (Declarative UI: components, state, layout): build milestone m01, the first
+Device Monitor screen, on top of m00.
+My tracks: Android = [Compose | XML], iOS = [SwiftUI | UIKit]  (default Compose + SwiftUI).
+Starting point: my m00 project in demo/ (Lesson 05). Use exactly the file contents shown in the
+lesson's "Full files" section for my tracks, including package lines and imports. All paths
+are relative to demo/. Touch no file that isn't listed here.
+
+1. Shared (all tracks). Add these, and leave Greeting.kt and Platform*.kt as they are:
+     shared/src/commonMain/kotlin/com/example/devicemonitor/Device.kt
+     shared/src/commonMain/kotlin/com/example/devicemonitor/SampleDevices.kt
+
+2. Android, both tracks: add androidApp/src/main/res/drawable/ic_bluetooth.xml.
+   AndroidManifest.xml, settings.gradle.kts, the root build.gradle.kts and gradle.properties
+   stay as in m00.
+   Compose track (androidApp/build.gradle.kts stays as in m00):
+     androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorScreen.kt (new)
+     androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt (replaced)
+   XML track:
+     androidApp/build.gradle.kts (replaced: viewBinding on; constraintlayout 2.2.2 and
+       lifecycle-runtime-ktx 2.11.0 added)
+     androidApp/src/main/res/layout/activity_main.xml (replaced)
+     androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt (replaced)
+   Build, from demo/:
+     ./gradlew :shared:compileCommonMainKotlinMetadata :androidApp:assembleDebug
+   Run: `adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk`, then
+     `adb shell am start -n com.example.devicemonitor/com.example.devicemonitor.android.MainActivity`.
+
+3. iOS. project.yml and Info.plist stay as in m00. After adding and deleting files, run
+   `xcodegen generate` in iosApp/ so the target's file list is refreshed.
+   SwiftUI: add iosApp/iosApp/DeviceMonitorView.swift, replace iosApp/iosApp/iOSApp.swift,
+     delete iosApp/iosApp/ContentView.swift.
+   UIKit: add iosApp/iosApp/DeviceMonitorViewController.swift, replace
+     iosApp/iosApp/SceneDelegate.swift, delete iosApp/iosApp/ViewController.swift.
+     AppDelegate.swift stays.
+   Build, from demo/iosApp/ (pick an installed iPhone simulator on iOS 17 or newer; if two
+   share a name, use id=&lt;UDID&gt;):
+     xcodebuild -project iosApp.xcodeproj -scheme iosApp \
+       -destination 'platform=iOS Simulator,name=&lt;that iPhone&gt;' -derivedDataPath build build
+   Run: `xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/iosApp.app`, then
+     `xcrun simctl launch booted com.example.devicemonitor`.
+
+Acceptance checks (run every one you can, on an emulator and a simulator):
+- Both builds succeed with no compiler warnings from our own Kotlin or Swift code (don't use
+  -q to check warnings; read the build output). Not from our code, and expected: Gradle's
+  "Deprecated Gradle features … Gradle 10" line, "Unable to strip the following libraries"
+  from the Android build, Xcode's "appintentsmetadataprocessor … warning: Metadata
+  extraction skipped", and xcodebuild's "WARNING: Using the first of multiple matching
+  destinations".
+- Android, launch (give the emulator a few seconds: the first frame can be the app's icon on a
+  plain background): the Bluetooth icon and "Device Monitor", a "Device name filter" field, a
+  full-width Scan button, and "Tap Scan to look for devices." Nothing under the status bar,
+  and dark, readable status-bar icons.
+- Tap Scan: the button is disabled and a spinner + "Scanning…" show for about 1.5 s, then
+  "Devices found: 5" and the button is enabled again. Filter "sens" + Scan: "Devices found: 1".
+  Filter "zzz" + Scan: "No devices found. Try another filter." in red.
+- Android, rotation (`adb shell settings put system accelerometer_rotation 0`, then
+  `... user_rotation 1`): with a result showing, the filter and the result survive. Rotating
+  during a scan returns the screen to "Tap Scan to look for devices." (expected for m01,
+  lesson section 6). Restore user_rotation 0 and accelerometer_rotation 1 afterwards.
+- iOS, launch: the antenna icon and "Device Monitor", the filter field, a full-width Scan
+  button, and "Tap Scan to look for devices.", with the icon small and the title next to it
+  (the simulator may be in dark mode). Run the Scan checks above too if you can drive the
+  simulator (xcrun simctl has no tap command; idb or a throwaway XCUITest that launches the
+  installed app by bundle ID can. Don't script the Simulator window with System Events: its
+  clicks and keystrokes are unreliable). In automation, the status text ends in the single
+  character "…", not three dots. If you can't, say so and list which iOS checks you didn't run.
+Then walk me through each file line by line, tied to the lesson's walkthrough numbers, and
+show me where SampleDevices appears in
+shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework/Headers/Shared.h
+(run ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 if that folder doesn't exist).
+Do NOT do the unaided exercise for me.</pre>
+  </div>
+
+  <h2>Further reading</h2>
+  <ul>
+    <li><a href="../reference/declarative-ui-cheatsheet.html">Cheatsheet: declarative UI across four tracks</a>: state, lists, navigation, side effects and threads on one page, Compose ↔ XML ↔ SwiftUI ↔ UIKit.</li>
+    <li>Android: <a href="https://developer.android.com/develop/ui/compose/mental-model">Thinking in Compose</a> (primary source), <a href="https://developer.android.com/develop/ui/compose/state">State and Jetpack Compose</a>, <a href="https://developer.android.com/develop/ui/compose/side-effects">Side-effects in Compose</a>, <a href="https://developer.android.com/develop/ui/compose/text/user-input">Configure text fields</a>.</li>
+    <li>Apple: <a href="https://developer.apple.com/documentation/swiftui/state">State</a>, <a href="https://developer.apple.com/documentation/swiftui/vstack">VStack</a>.</li>
+    <li><a href="../reference/glossary.html">Course glossary</a>: new terms from this lesson are marked (06).</li>
+    <li>Wisdom: <a href="https://reddit.com/r/androiddev">r/androiddev</a> and <a href="https://reddit.com/r/iOSProgramming">r/iOSProgramming</a>. Search there for "remember vs rememberSaveable" to see how the section 6 traps bite real apps.</li>
+  </ul>
+
+  <section id="full-files">
+    <h2>Full files</h2>
+    <p>Every file this lesson adds or changes, complete. Open one to check your work. Everything else stays as in m00. Files are coloured by the part of the app they belong to; build files and the shared source set carry no colour. Delete <code>iosApp/iosApp/ContentView.swift</code> (SwiftUI) or <code>iosApp/iosApp/ViewController.swift</code> (UIKit).</p>
+
+    <details class="full-file">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/Device.kt</summary>
+<pre><code>package com.example.devicemonitor
+
+data class Device(val id: String, val name: String, val rssi: Int)</code></pre>
+    </details>
+    <details class="full-file">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/SampleDevices.kt</summary>
+<pre><code>package com.example.devicemonitor
+
+// Stand-in for a real BLE scan until Lesson 13.
+object SampleDevices {
+    val all: List&lt;Device&gt; = listOf(
+        Device(id = "C4:7C:8D:6A:01:10", name = "OBD-II Adapter", rssi = -48),
+        Device(id = "C4:7C:8D:6A:01:11", name = "Heart Rate Monitor", rssi = -61),
+        Device(id = "C4:7C:8D:6A:01:12", name = "Tire Pressure Sensor", rssi = -67),
+        Device(id = "C4:7C:8D:6A:01:13", name = "Thermometer", rssi = -74),
+        Device(id = "C4:7C:8D:6A:01:14", name = "Smart Scale", rssi = -85),
+    )
+
+    fun matching(filter: String): List&lt;Device&gt; =
+        all.filter { it.name.contains(filter.trim(), ignoreCase = true) }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="android">
+      <summary>androidApp/src/main/res/drawable/ic_bluetooth.xml</summary>
+<pre><code>&lt;vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"&gt;
+    &lt;path
+        android:fillColor="#FF000000"
+        android:pathData="M17.71,7.71L12,2h-1v7.59L6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 11,14.41V22h1l5.71,-5.71 -4.3,-4.29 4.3,-4.29zM13,5.83l1.88,1.88L13,9.59V5.83zM14.88,16.29L13,18.17v-3.76l1.88,1.88z" /&gt;
+&lt;/vector&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorScreen.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import com.example.devicemonitor.SampleDevices
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+// Stateful: owns the screen's state and the scan side effect.
+@Composable
+fun DeviceMonitorScreen() {
+    var filter by rememberSaveable { mutableStateOf("") }
+    var foundCount by rememberSaveable { mutableStateOf&lt;Int?&gt;(null) }
+    var isScanning by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    DeviceMonitorContent(
+        filter = filter,
+        onFilterChange = { filter = it },
+        isScanning = isScanning,
+        foundCount = foundCount,
+        onScan = {
+            val query = filter
+            isScanning = true
+            foundCount = null
+            scope.launch {
+                delay(1_500)
+                foundCount = SampleDevices.matching(query).size
+                isScanning = false
+            }
+        },
+    )
+}
+
+// Stateless: renders whatever it's given, reports events up.
+@Composable
+fun DeviceMonitorContent(
+    filter: String,
+    onFilterChange: (String) -&gt; Unit,
+    isScanning: Boolean,
+    foundCount: Int?,
+    onScan: () -&gt; Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_bluetooth),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.size(32.dp),
+            )
+            Text("Device Monitor", style = MaterialTheme.typography.headlineSmall)
+        }
+        OutlinedTextField(
+            value = filter,
+            onValueChange = onFilterChange,
+            label = { Text("Device name filter") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(onClick = onScan, enabled = !isScanning, modifier = Modifier.fillMaxWidth()) {
+            Text("Scan")
+        }
+        ScanStatus(isScanning = isScanning, foundCount = foundCount)
+    }
+}
+
+@Composable
+private fun ScanStatus(isScanning: Boolean, foundCount: Int?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when {
+            isScanning -&gt; {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("Scanning…")
+            }
+            foundCount == null -&gt; Text("Tap Scan to look for devices.")
+            foundCount == 0 -&gt; Text(
+                "No devices found. Try another filter.",
+                color = MaterialTheme.colorScheme.error,
+            )
+            else -&gt; Text("Devices found: $foundCount")
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.MaterialTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                DeviceMonitorScreen()
+            }
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml">
+      <summary>androidApp/build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "com.example.devicemonitor.android"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "com.example.devicemonitor"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildFeatures { viewBinding = true }
+}
+
+dependencies {
+    implementation(project(":shared"))
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/layout/activity_main.xml</summary>
+<pre><code>&lt;FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"&gt;
+
+    &lt;androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"&gt;
+
+        &lt;ImageView
+            android:id="@+id/headerIcon"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_bluetooth"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="?attr/colorAccent" /&gt;
+
+        &lt;TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="Device Monitor"
+            android:textAppearance="@style/TextAppearance.AppCompat.Headline"
+            app:layout_constraintStart_toEndOf="@id/headerIcon"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@id/headerIcon"
+            app:layout_constraintBottom_toBottomOf="@id/headerIcon" /&gt;
+
+        &lt;EditText
+            android:id="@+id/filterInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="Device name filter"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/headerIcon" /&gt;
+
+        &lt;Button
+            android:id="@+id/scanButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Scan"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/filterInput" /&gt;
+
+        &lt;ProgressBar
+            android:id="@+id/progress"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@id/statusText"
+            app:layout_constraintBottom_toBottomOf="@id/statusText" /&gt;
+
+        &lt;TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="12dp"
+            app:layout_constraintStart_toEndOf="@id/progress"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/scanButton"
+            app:layout_goneMarginStart="0dp" /&gt;
+    &lt;/androidx.constraintlayout.widget.ConstraintLayout&gt;
+&lt;/FrameLayout&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.graphics.Color
+import android.os.Bundle
+import android.view.View
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.example.devicemonitor.SampleDevices
+import com.example.devicemonitor.android.databinding.ActivityMainBinding
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+class MainActivity : AppCompatActivity() {
+    // Screen state lives in fields; render() copies it into the views.
+    private var foundCount: Int? = null
+    private var isScanning = false
+
+    private lateinit var binding: ActivityMainBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        foundCount = savedInstanceState?.getInt("foundCount", -1)?.takeIf { it &gt;= 0 }
+        binding.scanButton.setOnClickListener { scan(binding.filterInput.text.toString()) }
+        render()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        foundCount?.let { outState.putInt("foundCount", it) }
+    }
+
+    private fun scan(query: String) {
+        isScanning = true
+        foundCount = null
+        render()
+        lifecycleScope.launch {
+            delay(1_500)
+            foundCount = SampleDevices.matching(query).size
+            isScanning = false
+            render()
+        }
+    }
+
+    // The one place that touches views: every state change ends here.
+    private fun render() {
+        binding.scanButton.isEnabled = !isScanning
+        binding.progress.visibility = if (isScanning) View.VISIBLE else View.GONE
+        binding.statusText.text = when {
+            isScanning -&gt; "Scanning…"
+            foundCount == null -&gt; "Tap Scan to look for devices."
+            foundCount == 0 -&gt; "No devices found. Try another filter."
+            else -&gt; "Devices found: $foundCount"
+        }
+        binding.statusText.setTextColor(if (foundCount == 0) Color.RED else Color.DKGRAY)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/iOSApp.swift</summary>
+<pre><code>import SwiftUI
+
+@main
+struct iOSApp: App {
+    var body: some Scene {
+        WindowGroup {
+            DeviceMonitorView()
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/DeviceMonitorView.swift</summary>
+<pre><code>import SwiftUI
+import Shared
+
+struct DeviceMonitorView: View {
+    @State private var filter = ""
+    @State private var foundCount: Int? = nil
+    @State private var isScanning = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.title)
+                    .foregroundStyle(.tint)
+                Text("Device Monitor")
+                    .font(.title2)
+            }
+            TextField("Device name filter", text: $filter)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+            Button(action: scan) {
+                Text("Scan")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isScanning)
+            ScanStatus(isScanning: isScanning, foundCount: foundCount)
+            Spacer()
+        }
+        .padding()
+    }
+
+    private func scan() {
+        let query = filter
+        isScanning = true
+        foundCount = nil
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            foundCount = SampleDevices.shared.matching(filter: query).count
+            isScanning = false
+        }
+    }
+}
+
+private struct ScanStatus: View {
+    let isScanning: Bool
+    let foundCount: Int?
+
+    var body: some View {
+        if isScanning {
+            HStack {
+                ProgressView()
+                Text("Scanning…")
+            }
+        } else if let foundCount {
+            if foundCount == 0 {
+                Text("No devices found. Try another filter.")
+                    .foregroundStyle(.red)
+            } else {
+                Text("Devices found: \(foundCount)")
+            }
+        } else {
+            Text("Tap Scan to look for devices.")
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/SceneDelegate.swift</summary>
+<pre><code>import UIKit
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
+               options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
+        window.rootViewController = DeviceMonitorViewController()
+        window.makeKeyAndVisible()
+        self.window = window
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/DeviceMonitorViewController.swift</summary>
+<pre><code>import UIKit
+import Shared
+
+final class DeviceMonitorViewController: UIViewController {
+    // Screen state lives in properties; render() copies it into the views.
+    private var foundCount: Int? = nil
+    private var isScanning = false
+
+    private let filterField = UITextField()
+    private let scanButton = UIButton(configuration: .filled())
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let statusLabel = UILabel()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let icon = UIImageView(image: UIImage(systemName: "antenna.radiowaves.left.and.right"))
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 28)
+        icon.tintColor = .tintColor
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        let titleLabel = UILabel()
+        titleLabel.text = "Device Monitor"
+        titleLabel.font = .preferredFont(forTextStyle: .title2)
+        filterField.placeholder = "Device name filter"
+        filterField.borderStyle = .roundedRect
+        filterField.autocorrectionType = .no
+        scanButton.configuration?.title = "Scan"
+        scanButton.addAction(UIAction { [weak self] _ in self?.scan() }, for: .touchUpInside)
+        statusLabel.numberOfLines = 0
+
+        let headerRow = UIStackView(arrangedSubviews: [icon, titleLabel])
+        headerRow.spacing = 12
+        headerRow.alignment = .center
+        let statusRow = UIStackView(arrangedSubviews: [spinner, statusLabel])
+        statusRow.spacing = 8
+        let stack = UIStackView(arrangedSubviews: [headerRow, filterField, scanButton, statusRow])
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.layoutMarginsGuide.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+        ])
+        render()
+    }
+
+    private func scan() {
+        let query = filterField.text ?? ""
+        isScanning = true
+        foundCount = nil
+        render()
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            foundCount = SampleDevices.shared.matching(filter: query).count
+            isScanning = false
+            render()
+        }
+    }
+
+    // The one place that touches views: every state change ends here.
+    private func render() {
+        scanButton.isEnabled = !isScanning
+        if isScanning { spinner.startAnimating() } else { spinner.stopAnimating() }
+        spinner.isHidden = !isScanning
+        if isScanning {
+            statusLabel.text = "Scanning…"
+        } else if let foundCount {
+            statusLabel.text = foundCount == 0
+                ? "No devices found. Try another filter."
+                : "Devices found: \(foundCount)"
+        } else {
+            statusLabel.text = "Tap Scan to look for devices."
+        }
+        statusLabel.textColor = foundCount == 0 ? .systemRed : .label
+    }
+}</code></pre>
+    </details>
+  </section>
+
+  <nav class="progress-links">
+    <a href="05-anatomy-of-a-kmp-project.html">← 05 Anatomy of a KMP project</a>
+    <a href="07-declarative-ui-lists.html">Next: 07 Declarative UI: lists, async, navigation →</a>
+  </nav>
+</main>
+
+<script>
+// Section 1 toy: the same events drive an imperative screen (handlers edit widgets) and a
+// declarative one (state, then render). The imperative handlers mirror the code shown.
+document.addEventListener("DOMContentLoaded", () => {
+  const SAMPLE = ["OBD-II Adapter", "Heart Rate Monitor", "Tire Pressure Sensor"];
+  const impEl = document.getElementById("toy-imp");
+  const decEl = document.getElementById("toy-dec");
+  const stateEl = document.getElementById("toy-state");
+  let widgets, state;
+
+  const reset = () => {
+    widgets = { buttonEnabled: true, spinner: false, status: "Tap Scan to look for devices.", statusError: false, rows: [] };
+    state = { isScanning: false, devices: null };
+  };
+
+  const imperative = {
+    scan() {
+      widgets.buttonEnabled = false;
+      widgets.spinner = true;
+      widgets.status = "Scanning…";
+      widgets.rows = [];
+    },
+    results(devices) {
+      if (devices.length === 0) {
+        widgets.status = "No devices found.";
+        widgets.statusError = true;
+        return;
+      }
+      widgets.spinner = false;
+      widgets.buttonEnabled = true;
+      widgets.status = `Devices found: ${devices.length}`;
+      widgets.rows = devices;
+    },
+  };
+
+  const declarative = {
+    scan() { state = { isScanning: true, devices: null }; },
+    results(devices) { state = { isScanning: false, devices }; },
+  };
+
+  const render = (s) => ({
+    buttonEnabled: !s.isScanning,
+    spinner: s.isScanning,
+    status: s.isScanning ? "Scanning…"
+      : s.devices === null ? "Tap Scan to look for devices."
+      : s.devices.length === 0 ? "No devices found."
+      : `Devices found: ${s.devices.length}`,
+    statusError: s.devices !== null && s.devices.length === 0,
+    rows: s.devices ?? [],
+  });
+
+  const draw = () => {
+    PhoneToy.draw(impEl, { ...widgets });
+    PhoneToy.draw(decEl, render(state));
+    stateEl.textContent = "declarative state = " + JSON.stringify(state);
+  };
+
+  document.querySelectorAll("#toy [data-ev]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const ev = button.dataset.ev;
+      if (ev === "reset") reset();
+      if (ev === "scan") { imperative.scan(); declarative.scan(); }
+      if (ev === "found") { imperative.results(SAMPLE); declarative.results(SAMPLE); }
+      if (ev === "none") { imperative.results([]); declarative.results([]); }
+      draw();
+    });
+  });
+
+  reset();
+  draw();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+# m02 · empty filter: "Scanning…" (one "…"), then 5 rows in SampleDevices order.
+# The 1.5 s scanning window is checked on Android only (a Maestro tap on iOS takes ~4 s);
+# the XCUITest in ../xcuitest covers it on iOS.
+appId: com.example.devicemonitor
+---
+- launchApp:
+    clearState: true
+# A cold debug build can show a blank first frame for a few seconds.
+- extendedWaitUntil:
+    visible: "Device Monitor"
+    timeout: 15000
+- tapOn:
+    text: "Scan"
+    # The spinner never "settles"; don't wait for it or the scan is over.
+    waitToSettleTimeoutMs: 300
+    retryTapIfNoChange: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible: "Scanning…"
+      - takeScreenshot: 02-scanning
+- extendedWaitUntil:
+    visible: "Devices found: 5"
+    timeout: 5000
+- assertVisible: "OBD-II Adapter"
+- assertVisible: "C4:7C:8D:6A:01:10"
+- assertVisible: "-48 dBm"
+- assertVisible:
+    text: "Heart Rate Monitor"
+    below: "OBD-II Adapter"
+- assertVisible:
+    text: "Tire Pressure Sensor"
+    below: "Heart Rate Monitor"
+- assertVisible:
+    text: "Thermometer"
+    below: "Tire Pressure Sensor"
+- assertVisible:
+    text: "Smart Scale"
+    below: "Thermometer"
+- assertVisible: "-85 dBm"
+- takeScreenshot: 02-found-5

@@ -2354,7 +2354,7 @@ Mỗi check tự động phủ phần nào:
 !!! warning "Bẫy đã gặp khi viết phần test này"
     - **Maestro trên iOS không bắt kịp 1,5 giây "Scanning…".** Một lệnh `tapOn` trên iOS mất khoảng 4 giây, nên flow `02` chỉ kiểm tra lúc đang quét trên Android. Trên iOS, XCUITest làm việc đó: nó kiểm tra được cả nút tắt (`isEnabled == false`), vòng quay, và chữ `…` là **một** ký tự chứ không phải ba dấu chấm.
     - **Compose giấu trạng thái `enabled` với Maestro.** Chữ "Scan" là một node con luôn báo `enabled=true`, còn node nút thật thì không có chữ. Vì vậy các flow không kiểm tra `enabled`; trên Android, xem ảnh chụp lúc quét.
-    - **Emulator bận thì app trắng màn hoặc báo "isn't responding".** Lỗi là `Waited 5000ms for FocusEvent` khi emulator vừa khởi động nguội (load 15 trên 4 nhân). Chờ `adb shell cat /proc/loadavg` xuống dưới khoảng 5 rồi chạy lại. Không phải bug của app: m01 không chặn main thread (`delay` chỉ tạm dừng coroutine).
+    - **Emulator vẽ bằng phần mềm thì app trắng màn, xoay máy thì đen màn và báo "isn't responding".** AVD có `hw.gpu.enabled=no` vẽ bằng CPU. Trace ANR cho thấy main thread chờ RenderThread của hệ thống, không có dòng code nào của app, và chính app Settings xoay ngang cũng trắng trơn. Cách chữa: khởi động emulator bằng `emulator -avd <tên> -gpu host -no-snapshot-load` (chỉ là cờ lúc chạy, không sửa cấu hình AVD), chờ `adb shell cat /proc/loadavg` xuống dưới khoảng 4 rồi chạy lại. Không phải bug của app: m01 không chặn main thread (`delay` chỉ tạm dừng coroutine).
     - **Cắm cả điện thoại lẫn emulator** thì luôn ghi `--device` cho Maestro và `ANDROID_SERIAL` cho `adb`, nếu không lệnh xoay máy sẽ đổi cài đặt trên điện thoại thật.
 
 ---

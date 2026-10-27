@@ -2597,6 +2597,89 @@ Ba điều rút ra từ bảng:
 
 ---
 
+## How to test
+
+Phần này **không có trong bản gốc**. Đây là cách tự kiểm tra bản build m02 của bạn: test tay từng bước, và test tự động bằng Maestro, XCUITest và một script `adb`.
+Mọi bước dưới đây đã chạy thật ngày 2026-10-27 trên emulator Pixel 8 (Android 14, khởi động với `-gpu host`) và simulator iPhone 17 (iOS 26.5): Maestro Android 5/5, Maestro iOS 5/5, XCUITest 5/5, script `adb` 15/15.
+
+### Chuẩn bị
+
+Build và cài theo đúng lệnh của brief (mục Brief cho agent), từ thư mục project m02 (`demo/`, hoặc `app/` ở tag `m02`). Đọc output build: không được có dòng `w:` (Kotlin) hay `warning:` từ file Swift của mình. Bốn dòng sau là bình thường: "Deprecated Gradle features … Gradle 10", "Unable to strip the following libraries", "appintentsmetadataprocessor … Metadata extraction skipped", "Using the first of multiple matching destinations" (dòng này có thể hiện cả khi đã ghi `id=<UDID>`).
+
+Khởi động emulator bằng GPU của máy Mac, rồi chờ máy ảo rảnh:
+
+```bash
+emulator -avd <tên> -gpu host -no-snapshot-load -no-snapshot-save
+adb shell cat /proc/loadavg      # chờ số đầu tiên xuống dưới khoảng 4
+```
+
+### Manual test
+
+Làm lần lượt trên cả hai máy. Mỗi bước ghi kết quả đúng phải thấy.
+
+1. **Mở app.** Thấy tiêu đề "Device Monitor" (không còn icon ở màn danh sách, icon đã chuyển sang màn chi tiết), ô "Device name filter", nút Scan rộng hết màn hình, dòng "Tap Scan to look for devices.", và danh sách trống. Android: không có gì nằm dưới thanh trạng thái, icon thanh trạng thái màu tối.
+2. **Bấm Scan, ô lọc để trống.** Ngay lập tức nút xám lại và vòng quay hiện cạnh "Scanning…". Khoảng 1,5 giây sau: "Devices found: 5" và năm hàng theo đúng thứ tự: OBD-II Adapter, Heart Rate Monitor, Tire Pressure Sensor, Thermometer, Smart Scale. Mỗi hàng có tên, id (`C4:7C:8D:6A:01:1x`) và tín hiệu (`-48 dBm` …). Nút bấm được lại.
+3. **Gõ `sens`, bấm Scan.** Một hàng duy nhất: Tire Pressure Sensor.
+4. **Gõ `zzz`, bấm Scan.** "No devices found. Try another filter." **màu đỏ**, không còn hàng nào, nút bấm được lại.
+5. **Lọc `sens`, bấm vào hàng.** Màn chi tiết có icon lớn, tên "Tire Pressure Sensor", "ID: C4:7C:8D:6A:01:12", "Signal: -67 dBm".
+6. **Quay lại bằng mọi đường.** Android: nút Back trên màn hình, rồi mở lại và dùng nút back của hệ thống. iOS: nút back trên thanh điều hướng, rồi mở lại và vuốt từ mép trái. Mỗi lần về danh sách, ô lọc vẫn là `sens` và hàng Tire Pressure Sensor vẫn còn. Đừng bấm back hệ thống khi đang ở màn danh sách: nó thoát app.
+7. **Android, xoay máy khi đang có kết quả.** `adb shell settings put system accelerometer_rotation 0`, rồi `adb shell settings put system user_rotation 1`. Ô lọc, dòng trạng thái và các hàng vẫn còn.
+8. **Android, xoay máy trong lúc quét.** Về dọc, bấm Scan, xoay ngang ngay. Màn hình về "Tap Scan to look for devices.", chữ trong ô lọc vẫn còn. Đây là hành vi đúng của m02 (mục 5), bài 08 mới sửa.
+9. **Android, bấm đúp thật nhanh.** Ở màn chi tiết, bấm đúp nút Back: phải về danh sách, không bao giờ trắng màn, và bấm một hàng vẫn mở bình thường. Ở danh sách, bấm đúp một hàng: chỉ mở một màn chi tiết (bấm Back một lần là về danh sách), không crash. Tay người khó bấm đủ nhanh, nên bước này để script lo (xem bên dưới).
+10. **Trả máy về như cũ.** `adb shell settings put system user_rotation 0` và `adb shell settings put system accelerometer_rotation 1`.
+
+### Automation test
+
+Tất cả file test nằm trong [`scratch/lesson-07/`](https://github.com/tucarmd/carmd-kmp-course/tree/main/scratch/lesson-07):
+
+- `maestro/01-launch.yaml` … `05-detail-back.yaml`: năm flow Maestro dùng chung cho Android và iOS. Flow `05` chỉ chạy phần quay lại trên Android, vì Maestro không có lệnh back đáng tin trên iOS.
+- `android-checks.sh`: script `adb` kiểm tra bước 7–9. Nó bấm đúp bằng hai tiến trình `adb` chạy song song, in `PASS`/`FAIL` từng ý, và tự trả cài đặt xoay về như cũ.
+- `xcuitest/`: project XCUITest dùng một lần, mở app iOS đã cài theo bundle id. Nó kiểm tra lúc đang quét, thứ tự hàng, nút back trên thanh điều hướng và vuốt-back.
+- [`TESTING.md`](https://github.com/tucarmd/carmd-kmp-course/blob/main/scratch/lesson-07/TESTING.md): bản hướng dẫn đầy đủ bằng tiếng Anh cho AI/LLM đọc và tự chạy, gồm bảng trạng thái phải đúng, lệnh, check cần nhìn ảnh, bẫy đã gặp và mẫu báo cáo.
+
+Chạy từ thư mục gốc của repo:
+
+```bash
+maestro --device emulator-5554 test --test-output-dir /tmp/m02-android scratch/lesson-07/maestro/
+maestro --device <UDID>        test --test-output-dir /tmp/m02-ios     scratch/lesson-07/maestro/
+ANDROID_SERIAL=emulator-5554 scratch/lesson-07/android-checks.sh
+cd scratch/lesson-07/xcuitest && xcodegen generate && \
+  xcodebuild test -project Probe.xcodeproj -scheme Probe \
+  -destination 'platform=iOS Simulator,id=<UDID>' -derivedDataPath build
+```
+
+Muốn agent làm hộ thì đưa nó đoạn này (giữ tiếng Anh để copy):
+
+```text
+Verify milestone m02 (Lesson 07) on an Android emulator and an iOS simulator.
+Read scratch/lesson-07/TESTING.md in full and follow it step by step.
+The app is in demo/ (or app/ at tag m02). Report every check as PASS / FAIL / NOT RUN,
+using the report format at the end of TESTING.md. Do not change any app source file.
+```
+
+Mỗi check tự động phủ phần nào:
+
+| Check | Android | iOS |
+|---|---|---|
+| Màn hình lúc mở, danh sách trống | Maestro `01` | Maestro `01`, XCUITest |
+| "Scanning…" và nút bị tắt khi đang quét | Maestro `02` + ảnh `02-scanning` | XCUITest |
+| 5 hàng đúng thứ tự | Maestro `02` | Maestro `02`, XCUITest |
+| Lọc `sens` → 1 hàng | Maestro `03` | Maestro `03`, XCUITest |
+| Lọc `zzz` → lỗi, không có hàng | Maestro `04` | Maestro `04`, XCUITest |
+| Lỗi màu đỏ | nhìn ảnh `04-not-found` | nhìn ảnh `04-not-found` |
+| Bấm hàng → chi tiết | Maestro `05` | Maestro `05`, XCUITest |
+| Quay lại vẫn giữ lọc và kết quả | Maestro `05` | XCUITest |
+| Xoay máy | `android-checks.sh` | không cần |
+| Bấm đúp Back, bấm đúp hàng | `android-checks.sh` | không cần |
+
+!!! warning "Bẫy đã gặp khi viết phần test này"
+    - **Emulator vẽ bằng phần mềm thì xoay máy là đen màn và "isn't responding".** Với AVD có `hw.gpu.enabled=no`, lần đầu xoay m02 bị treo. Trace ANR cho thấy main thread chờ RenderThread của hệ thống, không có dòng code nào của app, và chính app Settings xoay ngang cũng trắng trơn. Khởi động lại bằng `-gpu host` là hết, mọi check đều đạt.
+    - **Lỗi bấm đúp chỉ hiện khi hai cú bấm thật sự cùng lúc.** Bấm tuần tự bằng một phiên `adb` không bao giờ thấy lỗi, đúng như mục 6 của bài nói. Vì vậy script mở hai tiến trình `adb` song song.
+    - **Maestro trên iOS chậm** (khoảng 4 giây mỗi cú bấm) và không có lệnh back đáng tin, nên lúc đang quét, nút back và vuốt-back trên iOS do XCUITest kiểm.
+    - **Cắm cả điện thoại lẫn emulator** thì luôn ghi `--device` cho Maestro và `ANDROID_SERIAL` cho `adb`, nếu không các cú bấm và lệnh xoay sẽ chạy trên điện thoại thật.
+
+---
+
 ## Sau bài này tự làm được gì
 
 Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 08.
@@ -2612,4 +2695,5 @@ Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 08.
 - [ ] Đoán đúng cái gì còn và cái gì mất khi mở chi tiết rồi quay lại, khi xoay máy, và khi xoay máy giữa lúc quét, trên Android và iOS (xem [A8](#a8-vi-sao-compose-quen-con-swiftui-thi-khong)).
 - [ ] Biết vì sao không bắt đầu quét trong `.task` / `onAppear`.
 - [ ] Làm xong 3 bài tự làm ở trên mà không cần agent.
+- [ ] Tự chạy được manual test và automation test của m02, và đọc được kết quả (xem [How to test](#how-to-test)).
 

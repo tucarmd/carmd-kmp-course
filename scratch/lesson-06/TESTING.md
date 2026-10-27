@@ -55,7 +55,7 @@ xcodebuild -project iosApp.xcodeproj -scheme iosApp \
 Pick devices:
 
 ```bash
-emulator -list-avds                    # boot one: emulator -avd <name> -no-snapshot-save
+emulator -list-avds                    # boot one: emulator -avd <name> -gpu host -no-snapshot-save
 xcrun simctl list devices available    # use the UDID, names can repeat
 ```
 
@@ -129,11 +129,16 @@ then `xcrun xcresulttool export attachments --path r.xcresult --output-path att`
    Android and the XCUITest on iOS.
 3. **`uiautomator dump` waits for idle**, so while the spinner animates it returns only after the
    scan. Use a screenshot right after the tap to see the scanning state.
-4. **Blank first frame / ANR on a busy emulator.** A cold-booted emulator (especially with
-   `hw.gpu.enabled=no`) right after `clearState` can stay blank for seconds or raise
-   "isn't responding" with `Waited 5000ms for FocusEvent`. Check `adb shell cat /proc/loadavg`;
-   wait until the 1-minute load is below ~5 and rerun. It is not an app bug: m01 never blocks the
-   main thread (`delay` suspends).
+4. **Blank screen / ANR on a software-rendered emulator.** An AVD with `hw.gpu.enabled=no`
+   renders with lavapipe/SwANGLE. Right after a cold boot or `clearState` it can stay blank for
+   seconds, and on rotation it can go black and raise "isn't responding" (`Waited 5000ms for
+   FocusEvent` or `Application does not have a focused window`). The ANR trace shows the main
+   thread in `HardwareRenderer.setStopped` waiting for a RenderThread stuck in
+   `FrameCommitWrapper::onFrameCommit`, with no app code on either stack; the stock Settings app
+   also renders blank in landscape. Boot the emulator with
+   `emulator -avd <name> -gpu host -no-snapshot-load` (a launch flag, the AVD config is not
+   changed) and wait until `adb shell cat /proc/loadavg` is below ~4. It is not an app bug: m01
+   never blocks the main thread (`delay` suspends).
 5. **Emulator out of space** (`Requested internal only, but not enough space`): use another AVD
    rather than uninstalling the user's apps.
 6. **`hideKeyboard` fails on the SwiftUI field.** The flows don't need it: the keyboard does not

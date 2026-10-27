@@ -1,0 +1,2820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>12 — Permissions</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/switcher.js" defer></script>
+<script src="../assets/quiz.js" defer></script>
+<script src="../assets/copy.js" defer></script>
+</head>
+<body>
+<main>
+  <p class="kicker">Lesson 12 · Week 3 · Day 12 · Native Device Monitor course</p>
+  <h1>Permissions</h1>
+  <div class="meta">
+    <span class="tag">~2 h · +0.5 h per extra UI track</span>
+    <span class="tag">Milestone: m07 BLE permissions, every path shown in the UI</span>
+    <span class="tag">Prereq: <a href="11-testing-and-koin.html">11</a></span>
+  </div>
+  <div class="switchers">
+    <div class="switcher" data-platform="android"></div>
+    <div class="switcher" data-platform="ios"></div>
+  </div>
+
+  <div class="mission-tie">
+    <strong>Why this matters:</strong> from Lesson 13 the app talks to a real Bluetooth radio, and neither OS lets it do that until the user says yes. Today the app asks. It checks where the Bluetooth permission stands, asks when the system can still ask, and shows the user what to do next on every path: granted, denied, permanently denied and restricted. It's the first capability that goes through <strong>both</strong> kinds of port: the ViewModel calls a new inbound port, <code>PermissionAccess</code>, its service applies the app's rules, and only the outbound adapters behind <code>PermissionChecker</code> talk to the OS. On Android that adapter is Kotlin in <code>androidMain</code>. On iOS it's your first <strong>Swift outbound adapter</strong>: a Swift class implementing a Kotlin interface, the pattern Lesson 13 uses for the real radio. That's milestone <strong>m07</strong>.
+  </div>
+
+  <p><span class="tag">Primary source</span> Android's <a href="https://developer.android.com/training/permissions/requesting">Request runtime permissions</a>, before section 1, and Apple's <a href="https://developer.apple.com/documentation/corebluetooth/cbmanagerauthorization">CBManagerAuthorization</a> (four short cases), before section 6.</p>
+  <p><span class="tag">Tracks</span> The app core, its tests and both outbound adapters are the same on every track (sections 1–4, 6 and 9). The tracks differ in two places: where Android code lends the adapter its result launcher (section 5), and how each screen shows the permission and notices that the user is back from Settings (section 8). The XML Views and UIKit tracks also change one layout each. Each excerpt shows only the lines its notes explain; the complete files are in <a href="#full-files">Full files</a> at the end.</p>
+
+  <h2>What changes from m06</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>What</th><th>m06</th><th>m07</th></tr>
+    <tr><td>the screen</td><td>filter, Scan, list</td><td>plus a permission row: one message and at most one button per status; Scan works only when Bluetooth is allowed</td></tr>
+    <tr><td>app core</td><td><code>DeviceScanning</code>, <code>BleScanner</code>, <code>ScanningService</code></td><td>plus <code>Permission</code> and <code>PermissionStatus</code>, the <code>PermissionAccess</code> inbound port, the <code>PermissionChecker</code> outbound port, <code>PermissionService</code></td></tr>
+    <tr><td>outbound adapters</td><td><code>SimulatedBleScanner</code> (shared)</td><td>plus <code>AndroidPermissionChecker</code> (Kotlin, <code>androidMain</code>) and <code>IosPermissionChecker</code> (Swift, the iOS app)</td></tr>
+    <tr><td>Koin start</td><td><code>initKoin()</code></td><td><code>initKoin(permissionChecker)</code>: each platform builds its adapter and passes it in</td></tr>
+    <tr><td>declarations</td><td>none</td><td>Android manifest: the Bluetooth permissions; iOS <code>project.yml</code>: the Bluetooth usage string</td></tr>
+    <tr><td>tests</td><td>9 per platform</td><td>16 per platform: 4 new for the permission service, 3 new for the ViewModel</td></tr>
+  </table>
+  </div>
+
+  <h2>1. One permission, two operating systems</h2>
+  <p>Both platforms follow the same loop. Android's guide puts it in steps: "Check whether the user has already granted runtime permission your app requires", then, if not, "Request the runtime permission", then "Check the user's response", and "If the user denied the permission instead, gracefully degrade your app experience" (<a href="https://developer.android.com/training/permissions/requesting">Request runtime permissions</a>). It adds a rule worth remembering: "You must check whether you have a permission every time you perform an operation that requires that permission", because the user can change it in Settings at any time. Apple says the same: "Because a person can change authorization at any time using Settings, always check the authorization status of a feature before accessing it" (<a href="https://developer.apple.com/documentation/uikit/requesting-access-to-protected-resources">Requesting access to protected resources</a>).</p>
+  <p>What "Bluetooth permission" means differs a lot:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th></th><th>Android 12 and higher (API 31+)</th><th>Android 11 and lower (API 26–30)</th><th>iOS</th></tr>
+    <tr><td>what the app asks for</td><td><code>BLUETOOTH_SCAN</code> and <code>BLUETOOTH_CONNECT</code>, two runtime permissions shown as one "Nearby devices" dialog</td><td><code>ACCESS_FINE_LOCATION</code>, a runtime permission, because "a Bluetooth scan could potentially be used to gather information about the location of the user"</td><td>one Bluetooth authorization, <code>CBManager.authorization</code></td></tr>
+    <tr><td>where it's declared</td><td colspan="2">the manifest (section 3)</td><td>a usage string in <code>Info.plist</code> (section 3)</td></tr>
+    <tr><td>after one refusal</td><td colspan="2">the app may ask again</td><td>never asked again</td></tr>
+    <tr><td>after two refusals</td><td colspan="2">"the user doesn't see the system permissions dialog if your app requests that permission again" (Android 11 and higher; earlier versions had a "don't ask again" checkbox)</td><td>—</td></tr>
+    <tr><td>a state the user can't change</td><td colspan="2">(not covered here)</td><td><code>restricted</code></td></tr>
+  </table>
+  </div>
+  <p class="source">Quotes: Android's <a href="https://developer.android.com/develop/connectivity/bluetooth/bt-permissions">Bluetooth permissions</a> and <a href="https://developer.android.com/about/versions/11/privacy/permissions">Android 11 permission updates</a>; Apple's <a href="https://developer.apple.com/documentation/corebluetooth/cbmanagerauthorization">CBManagerAuthorization</a>.</p>
+  <p>The app core can't speak in any of those terms: they belong to the platforms. So it gets its own words, chosen for <strong>what the user can do next</strong>, and each adapter translates. That's the rule from Lesson 10: an outbound port is named in the app's terms.</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 760 330" role="img" aria-labelledby="l12-paths-title">
+      <title id="l12-paths-title">The five permission statuses of the app core and the paths between them. NotRequested: a request shows the system prompt. From NotRequested, the user's answer leads to Granted or, on Android, to Denied; on iOS a refusal leads straight to PermanentlyDenied. If the user dismisses the Android dialog without answering, the status stays NotRequested. From Denied, which only Android has, a second request leads to Granted or to PermanentlyDenied. From PermanentlyDenied no prompt is possible: only the user, in Settings, can turn the permission on, which leads to Granted. Restricted, which only iOS reports, is a dead end the user can't change. On Android, Granted goes back to Denied if the user turns the permission off in Settings; on iOS that leads to PermanentlyDenied.</title>
+      <defs><marker id="l12-paths-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g data-part="core">
+        <rect class="box" x="20" y="120" width="150" height="60" rx="6"/>
+        <text class="mono small" x="32" y="145">NotRequested</text>
+        <text class="small muted" x="32" y="165">a request prompts</text>
+        <rect class="box" x="300" y="30" width="150" height="60" rx="6"/>
+        <text class="mono small" x="312" y="55">Denied</text>
+        <text class="small muted" x="312" y="75">may ask again (Android)</text>
+        <rect class="box" x="300" y="210" width="190" height="60" rx="6"/>
+        <text class="mono small" x="312" y="235">PermanentlyDenied</text>
+        <text class="small muted" x="312" y="255">no prompt: Settings only</text>
+        <rect class="box" x="590" y="120" width="150" height="60" rx="6"/>
+        <text class="mono small" x="602" y="145">Granted</text>
+        <text class="small muted" x="602" y="165">Scan is enabled</text>
+        <rect class="box" x="20" y="250" width="150" height="60" rx="6"/>
+        <text class="mono small" x="32" y="275">Restricted</text>
+        <text class="small muted" x="32" y="295">user can't change (iOS)</text>
+      </g>
+      <path class="edge" d="M170,140 L298,68" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="176" y="92">refused (Android)</text>
+      <path class="edge" d="M170,165 L298,232" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="160" y="222">refused (iOS)</text>
+      <path class="edge" d="M170,150 L588,150" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="470" y="143">allowed</text>
+      <path class="edge" d="M450,60 L590,132" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="500" y="78">allowed</text>
+      <path class="edge" d="M375,90 L385,208" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="388" y="160">refused again</text>
+      <path class="edge dashed" d="M490,240 L620,182" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="560" y="238">turned on in Settings</text>
+      <path class="edge dashed" d="M60,120 C60,80 120,80 120,118" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="20" y="74">dialog dismissed (Android)</text>
+      <path class="edge dashed" d="M665,120 C665,20 520,10 452,40" marker-end="url(#l12-paths-arrow)"/>
+      <text class="small" x="530" y="22">turned off in Settings (Android)</text>
+    </svg>
+    <figcaption>The app core's five statuses. Solid arrows are the user's answers to the system prompt; dashed ones happen outside the prompt.</figcaption>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>NotRequested</code></strong>: asking will show the system prompt. That's iOS's <code>notDetermined</code>, "the user has yet to authorize Bluetooth for this app".</li>
+    <li><strong><code>Denied</code></strong>: refused, but the system will still show its prompt. Only Android has it. Android's guide asks you to explain why first: "If this method returns true, show an educational UI to the user", where "this method" is <code>shouldShowRequestPermissionRationale()</code>.</li>
+    <li><strong><code>PermanentlyDenied</code></strong>: refused, and no prompt will appear again. On Android that's the second refusal ("The user's action implies "don't ask again," and is considered a permanent denial"). On iOS it's the first: "If the person denies permission, the access attempt that initiates the prompt, and any further attempts, fail", and the system "doesn't prompt again" (<a href="https://developer.apple.com/documentation/uikit/requesting-access-to-protected-resources">Requesting access to protected resources</a>). So iOS's <code>denied</code> maps to <code>PermanentlyDenied</code>, not to <code>Denied</code>.</li>
+    <li><strong><code>Restricted</code></strong>: iOS's <code>restricted</code>: "the user can't change the Bluetooth authorization status, possibly due to active restrictions such as parental controls". The app can only say so.</li>
+    <li><strong><code>Granted</code></strong>: Scan is enabled. It can still change: the user can turn the permission off in Settings (Android then reports <code>Denied</code>, iOS <code>PermanentlyDenied</code>), which is why every screen re-reads it when the app comes back to the foreground (section 8).</li>
+  </ol>
+
+  <h2>2. The ports and the service</h2>
+  <p>Two enums give the app core its words:</p>
+  <figure class="excerpt" data-part="core">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/core/Permission.kt</figcaption>
+<pre><code>package com.example.devicemonitor.core
+
+// A permission the app needs, in the app's terms. Each platform's adapter maps it to its
+// own: Bluetooth is two runtime permissions on Android 12 and later, one on iOS.
+<mark>enum class Permission { Bluetooth }</mark>
+
+// Where a permission stands, in terms of what the user can do next.
+<mark>enum class PermissionStatus {</mark>
+    NotRequested,      // not asked yet: a request shows the system prompt
+    Denied,            // refused, and the app may ask again (Android only)
+    PermanentlyDenied, // refused, and the system won't ask again: only Settings can change it
+    Restricted,        // blocked by a policy the user can't change, such as parental controls (iOS)
+    Granted,
+}</code></pre>
+  </figure>
+  <p><code>Permission</code> has one entry today. Extension E2 adds the camera, which is why the ports below take a list and return one status per permission. Then the two ports, side by side:</p>
+  <figure class="excerpt" data-part="inbound">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/core/inbound/PermissionAccess.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports: core.Permission, core.PermissionStatus</span>
+// Inbound port: what the app offers for the permissions it needs. The shared ViewModels
+// call it, and PermissionService implements it.
+<mark>interface PermissionAccess {</mark>
+    // Where the permission stands now. Never shows a prompt.
+<mark>    fun status(permission: Permission): PermissionStatus</mark>
+
+    // Asks the user for each permission the system can still prompt for, and returns where
+    // every one of them stands afterwards. Suspends while the system prompt is on screen.
+<mark>    suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt;</mark>
+
+    // Opens this app's page in the system Settings: the only way back from PermanentlyDenied.
+<mark>    fun openSettings()</mark>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/core/outbound/PermissionChecker.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports: core.Permission, core.PermissionStatus</span>
+// Outbound port: what the app needs from the OS's permission system, in the app's terms.
+// One adapter per platform: Kotlin in androidMain, Swift in the iOS app.
+<mark>interface PermissionChecker {</mark>
+    // Reads the permission's status from the OS. Never shows a prompt.
+<mark>    fun check(permission: Permission): PermissionStatus</mark>
+
+    // Shows the system prompt for these permissions and returns each one's status after the
+    // user answers.
+<mark>    suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt;</mark>
+
+    // Opens this app's page in the system Settings.
+<mark>    fun openSettings()</mark>
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>They look alike, and they mean different things.</strong> <code>PermissionAccess</code> is what the app <em>offers</em> its ViewModels. <code>PermissionChecker</code> is what it <em>needs</em> from the OS. In Lesson 10, <code>DeviceScanning</code> and <code>BleScanner</code> looked alike too, and the service between them held the rule.</li>
+    <li><strong><code>status</code> and <code>check</code> are plain functions</strong>: both platforms answer at once (Android's <code>checkSelfPermission</code>, iOS's <code>CBManager.authorization</code>). Only <code>request</code> suspends, because it waits for a person.</li>
+    <li><strong><code>openSettings</code> is on the ports too.</strong> Opening the Settings app is talking to the OS, so it goes through the adapter, like everything else that does.</li>
+  </ol>
+  <figure class="excerpt" data-part="core">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/core/PermissionService.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports: PermissionAccess, PermissionChecker</span>
+// Service: the app's permission rules. Prompt only for what the system can still prompt
+// for: never for a permission that is granted, permanently denied or restricted.
+<mark>class PermissionService(private val checker: PermissionChecker) : PermissionAccess {</mark>
+    override fun status(permission: Permission): PermissionStatus = checker.check(permission)
+
+    override suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt; {
+<mark>        val before = permissions.associateWith { checker.check(it) }</mark>
+<mark>        val askable = before.filterValues { it in ASKABLE }.keys.toList()</mark>
+        if (askable.isEmpty()) return before
+<mark>        return before + checker.request(askable)</mark>
+    }
+
+    override fun openSettings() = checker.openSettings()
+
+    private companion object {
+<mark>        val ASKABLE = setOf(PermissionStatus.NotRequested, PermissionStatus.Denied)</mark>
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>The rule: prompt only when a prompt can appear.</strong> A granted permission needs no prompt. A permanently denied or restricted one can't get one. Only <code>NotRequested</code> and <code>Denied</code> are passed to the adapter.</li>
+    <li><strong><code>before + checker.request(askable)</code></strong>: <code>+</code> on two maps keeps the left map's entries and lets the right one overwrite them. So the result has every permission asked about: fresh answers for the ones that were prompted for, and the old status for the rest.</li>
+    <li><strong>Why is this a service rule and not adapter code?</strong> It's the same on both platforms, it has nothing to do with Android or iOS APIs, and it can be tested on the JVM in milliseconds (section 9). That's Lesson 10's "where does this go?" answer for a rule of the app.</li>
+  </ol>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 760 330" role="img" aria-labelledby="l12-hex-title">
+      <title id="l12-hex-title">Who talks to whom for a permission request. The screen calls the shared DeviceListViewModel, an inbound adapter, which calls the inbound port PermissionAccess. PermissionService in the app core implements it and calls the outbound port PermissionChecker. Two outbound adapters implement that port: AndroidPermissionChecker, Kotlin in androidMain, which reaches Android's permission dialog through a result launcher; and IosPermissionChecker, Swift in the iOS app, which reads CBManager.authorization and creates a CBCentralManager. On Android only, a dashed arrow shows the Android UI code lending its result launcher to the adapter, because only an Activity or a Fragment can register one. In the tests, FakePermissionChecker replaces both adapters.</title>
+      <defs><marker id="l12-hex-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g data-part="android">
+        <rect class="box" x="10" y="30" width="130" height="50" rx="6"/>
+        <text class="title small" x="20" y="50">Android screen</text>
+        <text class="small muted" x="20" y="68">Compose · XML</text>
+      </g>
+      <g data-part="ios">
+        <rect class="box" x="10" y="100" width="130" height="50" rx="6"/>
+        <text class="title small" x="20" y="120">iOS screen</text>
+        <text class="small muted" x="20" y="138">SwiftUI · UIKit</text>
+      </g>
+      <g data-part="inbound">
+        <rect class="box" x="170" y="62" width="130" height="56" rx="6"/>
+        <text class="mono small" x="180" y="84">DeviceList</text>
+        <text class="mono small" x="180" y="100">ViewModel</text>
+      </g>
+      <g data-part="core">
+        <polygon class="box" points="320,90 350,20 560,20 590,90 560,160 350,160"/>
+        <text class="title" x="455" y="40" text-anchor="middle">App core</text>
+        <rect class="box" x="400" y="68" width="110" height="44" rx="6"/>
+        <text class="mono small" x="408" y="86">Permission</text>
+        <text class="mono small" x="408" y="102">Service</text>
+      </g>
+      <g data-part="inbound">
+        <rect class="box" x="300" y="128" width="118" height="26" rx="6"/>
+        <text class="mono small" x="306" y="146">PermissionAccess</text>
+      </g>
+      <g data-part="outbound">
+        <rect class="box" x="490" y="128" width="130" height="26" rx="6"/>
+        <text class="mono small" x="496" y="146">PermissionChecker</text>
+        <rect class="box" x="520" y="200" width="230" height="50" rx="6"/>
+        <text class="mono small" x="530" y="220">AndroidPermissionChecker</text>
+        <text class="small muted" x="530" y="238">Kotlin, androidMain · result launcher</text>
+        <rect class="box" x="520" y="265" width="230" height="50" rx="6"/>
+        <text class="mono small" x="530" y="285">IosPermissionChecker</text>
+        <text class="small muted" x="530" y="303">Swift, iOS app · CBManager</text>
+        <rect class="box" x="300" y="265" width="190" height="50" rx="6"/>
+        <text class="mono small" x="310" y="285">FakePermissionChecker</text>
+        <text class="small muted" x="310" y="303">commonTest</text>
+      </g>
+      <path class="edge" d="M140,55 L168,80" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge" d="M140,125 L168,102" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge" d="M235,118 L300,140" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge dashed" d="M400,98 L380,126" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge" d="M510,98 L545,126" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge dashed" d="M600,200 L580,156" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge dashed" d="M640,265 L600,156" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge dashed" d="M400,265 L540,156" marker-end="url(#l12-hex-arrow)"/>
+      <path class="edge dashed" d="M75,30 L75,12 L740,12 L740,198" marker-end="url(#l12-hex-arrow)"/>
+      <text class="small" x="220" y="9">Android only: an Activity or a Fragment lends its result launcher</text>
+    </svg>
+    <figcaption>Solid arrows are calls; dashed arrows into a port mean "implements". The top arrow is the one Android-only exception, explained in section 5.</figcaption>
+  </figure>
+  <ul class="legend">
+    <li data-part="core">App core</li>
+    <li data-part="inbound">Inbound (port and adapter)</li>
+    <li data-part="outbound">Outbound (port and adapter)</li>
+    <li data-part="android">Android</li>
+    <li data-part="ios">iOS</li>
+  </ul>
+
+  <h2>3. Declare before you ask</h2>
+  <p>Neither OS will ask for a permission the app hasn't declared. On Android, the declarations go in the manifest, the same on both Android tracks:</p>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/AndroidManifest.xml</figcaption>
+<pre><code>&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
+    &lt;!-- Android 11 and lower: Bluetooth itself, and location for BLE scans. --&gt;
+<mark>    &lt;uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" /&gt;</mark>
+<mark>    &lt;uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" /&gt;</mark>
+<mark>    &lt;uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" /&gt;</mark>
+    &lt;!-- Android 12 and higher: the Nearby devices permissions. --&gt;
+    &lt;uses-permission
+<mark>        android:name="android.permission.BLUETOOTH_SCAN"</mark>
+<mark>        android:usesPermissionFlags="neverForLocation" /&gt;</mark>
+<mark>    &lt;uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /&gt;</mark>
+<span class="elide">⋯  &lt;application&gt;: as in m06 (each Android track keeps its own theme)</span></code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>maxSdkVersion="30"</code></strong> on the old permissions: "This app compatibility step helps the system grant your app only the Bluetooth permissions that it needs when installed on devices that run Android 12 or higher" (<a href="https://developer.android.com/develop/connectivity/bluetooth/bt-permissions">Bluetooth permissions</a>). <code>BLUETOOTH</code> and <code>BLUETOOTH_ADMIN</code> are granted at install time. <code>ACCESS_FINE_LOCATION</code> is the runtime one the adapter asks for on Android 11 and lower.</li>
+    <li><strong><code>BLUETOOTH_SCAN</code> and <code>BLUETOOTH_CONNECT</code> are runtime permissions</strong>: "When your app requests at least one of these permissions, the system prompts the user to allow your app to access Nearby devices". Scanning needs the first one (Lesson 13), and connecting needs the second (Lesson 14). One dialog covers both.</li>
+    <li><strong><code>neverForLocation</code></strong> is a promise that the app never works out where the user is from scan results, so Android 12+ doesn't need location. It has a cost: "If you include <code>neverForLocation</code> in your <code>android:usesPermissionFlags</code>, some BLE beacons are filtered from the scan results." The Device Monitor connects to peripherals and doesn't track beacons, so the promise is true and the cost doesn't matter.</li>
+  </ol>
+  <p>On iOS, the declaration is a sentence the prompt shows to the user. XcodeGen writes it into <code>Info.plist</code> from <code>project.yml</code> (one line added on both iOS tracks):</p>
+  <figure class="excerpt">
+    <figcaption class="path">iosApp/project.yml</figcaption>
+<pre><code><span class="elide">⋯  name, options, target: as in m06</span>
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: Device Monitor
+        UILaunchScreen: {}
+<mark>        NSBluetoothAlwaysUsageDescription: Device Monitor uses Bluetooth to find and connect to nearby devices.</mark>
+<span class="elide">⋯  settings, preBuildScripts: as in m06 (the UIKit track also keeps its scene manifest)</span></code></pre>
+  </figure>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · a missing usage string is a crash, not a warning</span>
+    Apple's Core Bluetooth overview: "Your app will crash if its Info.plist doesn't include usage description keys for the types of data it needs to access. To access Core Bluetooth APIs on apps linked on or after iOS 13, include the <code>NSBluetoothAlwaysUsageDescription</code> key" (<a href="https://developer.apple.com/documentation/corebluetooth">Core Bluetooth</a>). It builds fine, and the Simulator won't catch it either: with the key deleted from our m07 build's <code>Info.plist</code>, the app launched on the iOS 26.2 Simulator, read <code>CBManager.authorization</code> and showed "allowed", with no crash. Run <code>xcodegen generate</code> after editing <code>project.yml</code>, and check that the key is in the generated <code>Info.plist</code>.
+  </div>
+
+  <h2>4. The Android adapter</h2>
+  <p>The adapter maps the app's <code>Permission.Bluetooth</code> to Android's names, which depend on the Android version:</p>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">shared/src/androidMain/kotlin/com/example/devicemonitor/adapter/outbound/AndroidPermissionChecker.kt</figcaption>
+<pre><code><span class="elide">⋯  the rest of the class, below</span>
+    // Android 12 (API 31) gave Bluetooth its own runtime permissions. Before that, a BLE scan
+    // needed fine location instead.
+    private fun Permission.androidNames(): List&lt;String&gt; = when (this) {
+        Permission.Bluetooth -&gt;
+<mark>            if (Build.VERSION.SDK_INT &gt;= Build.VERSION_CODES.S) {</mark>
+<mark>                listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)</mark>
+            } else {
+<mark>                listOf(Manifest.permission.ACCESS_FINE_LOCATION)</mark>
+            }
+    }</code></pre>
+  </figure>
+  <p>Then <code>check</code>. Android's own API answers only "granted or not": "This method returns either <code>PERMISSION_GRANTED</code> or <code>PERMISSION_DENIED</code>". Telling <code>NotRequested</code>, <code>Denied</code> and <code>PermanentlyDenied</code> apart takes two more clues:</p>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">shared/src/androidMain/kotlin/com/example/devicemonitor/adapter/outbound/AndroidPermissionChecker.kt</figcaption>
+<pre><code>    // Android has no "refused for good" status to read back, so the adapter remembers, across
+    // launches, which permissions the user has refused.
+<mark>    private val refusals = context.getSharedPreferences("permission-refusals", Context.MODE_PRIVATE)</mark>
+<span class="elide">⋯  attach, detach, onResult: section 5</span>
+    override fun check(permission: Permission): PermissionStatus {
+        val names = permission.androidNames()
+        return when {
+<mark>            names.all { isGranted(it) } -&gt; {</mark>
+                refusals.edit().remove(permission.name).apply()
+                PermissionStatus.Granted
+            }
+            // Refused before, and Android suggests explaining why: its dialog still shows.
+<mark>            shouldShowRationale(names) -&gt; {</mark>
+                refusals.edit().putBoolean(permission.name, true).apply()
+                PermissionStatus.Denied
+            }
+            // Refused before, and no explanation suggested any more: no dialog either.
+<mark>            refusals.getBoolean(permission.name, false) -&gt; PermissionStatus.PermanentlyDenied</mark>
+            else -&gt; PermissionStatus.NotRequested
+        }
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>isGranted</code></strong> is <code>ContextCompat.checkSelfPermission(context, name) == PERMISSION_GRANTED</code>, for every Android name the app permission maps to.</li>
+    <li><strong><code>shouldShowRationale</code></strong> asks <code>ActivityCompat.shouldShowRequestPermissionRationale(activity, name)</code>, which needs an <code>Activity</code>: section 5 is where the adapter gets one. Without one it answers <code>false</code> here, and a <code>Denied</code> permission would read as <code>PermanentlyDenied</code> (refusal remembered) or <code>NotRequested</code> (none remembered). So both Android tracks lend the <code>Activity</code> before anything reads the status (sections 5 and 8). Its documentation says only "Gets whether you should show UI with rationale before requesting a permission". It doesn't say when it answers <code>false</code>, so we watched (table below).</li>
+    <li><strong><code>refusals</code></strong> is the adapter's memory. "Not granted, and no rationale" means two different things: never asked, or refused for good. Android can't tell them apart, so the adapter remembers, in <code>SharedPreferences</code>, every permission it has seen refused. A memory of refusals is the adapter's job, not a rule of the app: iOS needs none.</li>
+  </ol>
+  <p>Here's what we saw. The first four rows' statuses match on the Android 16 (API 36) and Android 11 (API 30) emulators; the last row was run on API 36. The flags come from <code>adb shell dumpsys package com.example.devicemonitor</code> on API 36 (only <code>USER_SET</code> and <code>USER_FIXED</code> are shown; "none" means neither):</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>What the user did</th><th>flags</th><th>rationale?</th><th>adapter's status</th></tr>
+    <tr><td>nothing yet</td><td>none</td><td>false</td><td><code>NotRequested</code></td></tr>
+    <tr><td>dismissed the dialog with Back</td><td>none</td><td>false</td><td><code>NotRequested</code>: the next request shows the dialog again</td></tr>
+    <tr><td>refused once</td><td><code>USER_SET</code></td><td>true</td><td><code>Denied</code> (remembered)</td></tr>
+    <tr><td>refused twice</td><td><code>USER_SET|USER_FIXED</code></td><td>false</td><td><code>PermanentlyDenied</code>; after a cold start too, thanks to the memory</td></tr>
+    <tr><td>turned it off in Settings after granting</td><td><code>USER_SET</code></td><td>true</td><td><code>Denied</code></td></tr>
+  </table>
+  </div>
+  <p>Android's docs name the flags: "Permissions that have been denied once by the user are flagged by <code>USER_SET</code>. Permissions that have been denied permanently by selecting Deny twice are flagged by <code>USER_FIXED</code>" (<a href="https://developer.android.com/about/versions/11/privacy/permissions">Android 11 permission updates</a>). An app can't read the flags, so the adapter works out the same answer from the rationale and its memory.</p>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · "not granted, no rationale" is not "permanently denied"</span>
+    Our first version of the adapter skipped the memory: after a request, "not granted and no rationale" meant <code>PermanentlyDenied</code>. Then we dismissed the very first dialog with Back. Android recorded nothing (no flags), the dialog would have shown again, and the app told the user to go to Settings. Android's docs don't say what a dismissal does, so we checked: it isn't a refusal. The memory fixes both mistakes. A dismissal stays <code>NotRequested</code>, because nothing was ever refused. A permanent refusal survives a cold start, which without the memory would read <code>NotRequested</code>, and its "Allow" button would show no dialog.
+  </div>
+  <p>Requesting uses the launcher lent to the adapter (section 5) and waits for the answer:</p>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">shared/src/androidMain/kotlin/com/example/devicemonitor/adapter/outbound/AndroidPermissionChecker.kt</figcaption>
+<pre><code>    override suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt; {
+        val launcher = checkNotNull(launcher) { "No Activity or Fragment has attached a permission launcher." }
+<mark>        val answered = CompletableDeferred&lt;Unit&gt;()</mark>
+        answer = answered
+<mark>        launcher.launch(permissions.flatMap { it.androidNames() }.toTypedArray())</mark>
+<mark>        answered.await()</mark>
+<mark>        return permissions.associateWith { check(it) }</mark>
+    }
+
+    override fun openSettings() {
+        val intent = Intent(
+<mark>            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,</mark>
+<mark>            Uri.fromParts("package", context.packageName, null),</mark>
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>CompletableDeferred</code></strong> is a value that arrives later: <code>await()</code> suspends the ViewModel's coroutine until <code>onResult</code> (section 5) calls <code>complete</code>. The main thread is free the whole time the dialog is up.</li>
+    <li><strong>After the answer, it calls <code>check</code> again</strong> instead of trusting the launcher's <code>Map&lt;String, Boolean&gt;</code>. "Granted or not" isn't enough: it needs the rationale and the memory to tell <code>Denied</code> from <code>PermanentlyDenied</code>.</li>
+    <li><strong><code>ACTION_APPLICATION_DETAILS_SETTINGS</code></strong>: "Show screen of details about a particular application … Input: The Intent's data URI specifies the application package name to be shown, with the "package" scheme" (<a href="https://developer.android.com/reference/android/provider/Settings#ACTION_APPLICATION_DETAILS_SETTINGS">Settings</a>). <code>FLAG_ACTIVITY_NEW_TASK</code> is there because the adapter starts it from the application <code>Context</code>, not from an <code>Activity</code>.</li>
+  </ol>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · respect a refusal</span>
+    Android's guide is explicit about the denied branch: "respect the user's decision. Don't link to system settings in an effort to convince the user to change their decision." The app shows one line that says what's unavailable, with one button: "Ask again" while the system can still show its dialog, and "Open Settings" only once it can't, because Settings is then the only way back. It never pops a dialog or asks again on its own. Lesson 13 makes Scan itself depend on the permission, and the rest of the app keeps working without it.
+  </div>
+
+  <h2>5. Android: lending the adapter a launcher</h2>
+  <p>Here's the one exception to "only the adapter talks to the OS". Android shows its dialog through the Activity Result API, and only an <code>Activity</code> or a <code>Fragment</code> can register for a result: "You must call <code>registerForActivityResult()</code> before the fragment or activity is created", and "the callback must be unconditionally registered every time your activity is created" (<a href="https://developer.android.com/training/basics/intents/result">Get a result from an activity</a>). The adapter lives for the whole process; activities and fragments come and go. So the UI code registers the launcher and <em>lends</em> it to the adapter, with the <code>Activity</code> the rationale needs (section 4). It decides nothing: it doesn't check, launch or read the answer.</p>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">shared/src/androidMain/kotlin/com/example/devicemonitor/adapter/outbound/AndroidPermissionChecker.kt</figcaption>
+<pre><code><mark>class AndroidPermissionChecker(private val context: Context) : PermissionChecker {</mark>
+    private var activity: Activity? = null
+    private var launcher: ActivityResultLauncher&lt;Array&lt;String&gt;&gt;? = null
+    private var answer: CompletableDeferred&lt;Unit&gt;? = null
+<span class="elide">⋯  refusals: section 4</span>
+<mark>    fun attach(activity: Activity, launcher: ActivityResultLauncher&lt;Array&lt;String&gt;&gt;) {</mark>
+        this.activity = activity
+        this.launcher = launcher
+    }
+
+<mark>    fun detach(launcher: ActivityResultLauncher&lt;Array&lt;String&gt;&gt;) {</mark>
+        if (this.launcher !== launcher) return
+        this.activity = null
+        this.launcher = null
+    }
+
+    // The launcher's callback. It passes its own Activity too, so that whichever of attach and
+    // onResult runs first after a rotation, the answer is read through the new Activity.
+<mark>    fun onResult(activity: Activity) {</mark>
+        this.activity = activity
+<mark>        answer?.complete(Unit)</mark>
+        answer = null
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>detach</code> checks it's the same launcher.</strong> If a newer <code>Activity</code> or <code>Fragment</code> has attached its own launcher meanwhile, the old one's <code>detach</code> leaves it alone instead of wiping it.</li>
+    <li><strong>No <code>Activity</code> is kept after <code>detach</code></strong>: the adapter lives as long as the process, and holding a destroyed <code>Activity</code> would leak it.</li>
+  </ol>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</figcaption>
+<pre><code>class MainActivity : ComponentActivity() {
+<span class="elide">⋯  a three-line comment: why the Activity registers and lends the launcher</span>
+<mark>    private val permissionChecker by lazy {</mark>
+        (application as DeviceMonitorApplication).permissionChecker
+    }
+<mark>    private val permissionLauncher = registerForActivityResult(RequestMultiplePermissions()) {</mark>
+<mark>        permissionChecker.onResult(this)</mark>
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+<span class="elide">⋯  a two-line comment: why attach comes before setContent</span>
+<mark>        permissionChecker.attach(this, permissionLauncher)</mark>
+<mark>        setContent {</mark>
+<span class="elide">⋯  MaterialTheme { DeviceMonitorApp() }: as in m06</span>
+        }
+    }
+
+    override fun onDestroy() {
+<mark>        permissionChecker.detach(permissionLauncher)</mark>
+        super.onDestroy()
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>A property initializer</strong> is the safe place: "<code>registerForActivityResult()</code> is safe to call before your fragment or activity is created, letting it be used directly when declaring member variables" (<a href="https://developer.android.com/training/basics/intents/result">Get a result from an activity</a>). A rotation creates a new <code>MainActivity</code>, which registers again, as the rule asks, and its callback passes that new <code>Activity</code> to <code>onResult</code>.</li>
+    <li><strong><code>attach</code> comes before <code>setContent</code></strong>, because the first read of the permission happens in the content it composes: <code>koinViewModel()</code> builds the list screen's ViewModel when the screen is first composed, and the ViewModel's constructor reads the status (section 8). Attached first, that read already has the <code>Activity</code>, so it can tell <code>Denied</code> apart.</li>
+    <li><strong><code>onCreate</code>/<code>onDestroy</code></strong> bracket the <code>Activity</code>'s whole life, so the adapter never holds a destroyed one. Its <code>application</code> is our <code>DeviceMonitorApplication</code>, which owns the adapter (section 7); <code>by lazy</code> reads it only when <code>onCreate</code> first needs it. Android's manual DI page reaches its container the same way: <code>(application as MyApplication).appContainer</code>.</li>
+  </ol>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · a composable lends too late for the first read</span>
+    Compose has its own launcher: "The same Activity Result API and <code>rememberLauncherForActivityResult()</code> explained above can be used to request runtime permissions using … <code>RequestMultiplePermissions</code> contract for multiple permissions" (<a href="https://developer.android.com/develop/ui/compose/libraries">Compose and other libraries</a>). Our first version used it, in a composable inside the list screen that attached the adapter in a <code>DisposableEffect</code>. That effect ran only after the screen had been composed, and composing it had already built the ViewModel, whose constructor read the status with no <code>Activity</code> attached. That read answers <code>PermanentlyDenied</code> or <code>NotRequested</code> for a <code>Denied</code> permission (section 4), and the screen shows it until <code>ON_RESUME</code> reads the status again. It's a race: on the API 36 emulator, two of our four screen recordings of a cold start after one refusal showed "Bluetooth permission is off" + Open Settings for the first frames, then "denied" + Ask again. After turning the permission off in Settings, the adapter remembers no refusal, so the wrong row is "needs Bluetooth permission" + Allow Bluetooth. With <code>MainActivity</code> lending before <code>setContent</code>, every cold start we recorded, after one refusal and after turning it off in Settings, showed "denied" + Ask again from the first frame.
+  </div>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListFragment.kt</figcaption>
+<pre><code><span class="elide">⋯  a three-line comment: why the Fragment registers and lends the launcher</span>
+<mark>    private val permissionChecker by lazy {</mark>
+        (requireActivity().application as DeviceMonitorApplication).permissionChecker
+    }
+<mark>    private val permissionLauncher = registerForActivityResult(RequestMultiplePermissions()) {</mark>
+<mark>        permissionChecker.onResult(requireActivity())</mark>
+    }
+<span class="elide">⋯  onCreateView, onViewCreated: as in m06</span>
+    override fun onStart() {
+        super.onStart()
+<mark>        permissionChecker.attach(requireActivity(), permissionLauncher)</mark>
+    }
+<span class="elide">⋯  onResume: section 8</span>
+    override fun onStop() {
+<mark>        permissionChecker.detach(permissionLauncher)</mark>
+        super.onStop()
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>A property initializer</strong> is the safe place: "<code>registerForActivityResult()</code> is safe to call before your fragment or activity is created, letting it be used directly when declaring member variables" (<a href="https://developer.android.com/training/basics/intents/result">Get a result from an activity</a>). Every new <code>Fragment</code> instance registers again, as the rule asks.</li>
+    <li><strong><code>by lazy</code></strong> for the adapter, because <code>requireActivity()</code> throws until the Fragment is attached to its Activity, and property initializers run before that.</li>
+    <li><strong><code>onStart</code>/<code>onStop</code></strong> bracket the time the screen is visible, which is when a user can tap "Allow Bluetooth".</li>
+  </ol>
+  </div>
+  </div>
+  <p data-both-only="android" class="callout ts"><span class="label">XML vs Compose · what changed and why</span>The same three calls, <code>attach</code>, <code>onResult</code> and <code>detach</code>, in different homes. The XML track's screen is a <code>Fragment</code>, which can register for itself: it registers once per instance, as a property, and brackets the visible time with <code>onStart</code>/<code>onStop</code>. A Compose screen is a composable, which can't lend before it is composed, so the one <code>Activity</code> registers, as a property too, and brackets its whole life with <code>onCreate</code>/<code>onDestroy</code>. Either way, the <code>Activity</code> is attached before the screen's ViewModel first reads the status (section 8).</p>
+  <p><strong>We rotated the emulator while the dialog was up</strong>, on both tracks (API 36). The <code>Activity</code> behind the dialog was recreated (logcat: <code>finishDrawing of relaunch: … MainActivity</code>). The answer was still delivered to the launcher the new <code>Activity</code> (Compose) or <code>Fragment</code> (XML) registered, and the screen showed "allowed" or "denied" as answered. The ViewModel and the adapter both outlived the old <code>Activity</code>, so the coroutine waiting in <code>request</code> got its answer.</p>
+
+  <h2>6. The iOS adapter, in Swift</h2>
+  <p>The iOS adapter is a Swift class in the iOS app that implements the Kotlin interface <code>PermissionChecker</code>. Swift sees a Kotlin interface as a protocol, so this is protocol conformance, and Koin hands the object to the app core like any other adapter. It's shared by both iOS tracks:</p>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">iosApp/iosApp/IosPermissionChecker.swift</figcaption>
+<pre><code><span class="elide">⋯  imports: CoreBluetooth, Shared, UIKit</span>
+// Outbound adapter: Bluetooth permission on iOS, behind the Kotlin PermissionChecker port.
+// iOS has one Bluetooth permission. Reading CBManager.authorization never prompts; the
+// prompt appears when the app first uses Bluetooth, here by creating a CBCentralManager.
+<mark>@MainActor</mark>
+<mark>final class IosPermissionChecker: NSObject, @preconcurrency PermissionChecker,</mark>
+<mark>    @preconcurrency CBCentralManagerDelegate {</mark>
+    private var manager: CBCentralManager?
+    private var waiting: [CheckedContinuation&lt;Void, Never&gt;] = []
+
+<mark>    func check(permission: Permission) -&gt; PermissionStatus {</mark>
+        Self.bluetoothStatus()
+    }
+<span class="elide">⋯  __request, openSettings, centralManagerDidUpdateState: below</span>
+    private static func bluetoothStatus() -&gt; PermissionStatus {
+<mark>        switch CBManager.authorization {</mark>
+        case .notDetermined: .notRequested
+        case .restricted: .restricted
+<mark>        case .denied: .permanentlyDenied // iOS never shows the prompt again</mark>
+        case .allowedAlways: .granted
+        @unknown default: .restricted
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>CBManager.authorization</code></strong> is a class property: "The current authorization status for using Bluetooth". It can be read "before creating a CBManager instance", and "The initial value of this property is <code>notDetermined</code>" (<a href="https://developer.apple.com/documentation/corebluetooth/cbmanager/authorization-swift.type.property">CBManager.authorization</a>). Reading it never prompts.</li>
+    <li><strong><code>Permission</code> and <code>PermissionStatus</code> arrive as Swift enums</strong>, even inside the protocol's requirements: SKIE "generat[es] a wrapping Swift enum for a given Kotlin enum" and "adds back the exhaustive checking" (<a href="https://skie.touchlab.co/features/enums">SKIE: Enums</a>). So the <code>switch</code> returns <code>.granted</code> and friends directly.</li>
+    <li><strong><code>@unknown default</code></strong> handles a case a future iOS might add. <code>.restricted</code> is the cautious choice: the app shows "not available" and never prompts.</li>
+    <li><strong><code>@MainActor</code> plus <code>@preconcurrency</code>.</strong> The adapter keeps mutable state, and Core Bluetooth calls its delegate on the main queue (<code>queue: nil</code>, below), so the class is main-actor isolated. The Kotlin protocol says nothing about actors, and Swift 6 refuses a main-actor method as a witness for it. <code>@preconcurrency</code> on the conformance accepts it, and Swift checks at run time instead: "Calling an isolated synchronous function from outside the isolation domain will result in a runtime error that halts program execution" (<a href="https://github.com/swiftlang/swift-evolution/blob/main/proposals/0423-dynamic-actor-isolation.md">SE-0423</a>). Our calls come from the ViewModel on the main thread, so the check holds.</li>
+  </ol>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">iosApp/iosApp/IosPermissionChecker.swift</figcaption>
+<pre><code>    // The Kotlin suspend fun. SKIE keeps the name `request` for the async function Swift
+    // calls, so the one Swift implements is `__request`.
+<mark>    func __request(permissions: [Permission]) async throws -&gt; [Permission: PermissionStatus] {</mark>
+<mark>        if CBManager.authorization == .notDetermined {</mark>
+<mark>            await withCheckedContinuation { continuation in</mark>
+                waiting.append(continuation)
+                if manager == nil {
+<mark>                    manager = CBCentralManager(</mark>
+                        delegate: self, queue: nil,
+                        options: [CBCentralManagerOptionShowPowerAlertKey: false]
+                    )
+                }
+            }
+        }
+        let status = Self.bluetoothStatus()
+        return Dictionary(uniqueKeysWithValues: permissions.map { ($0, status) })
+    }
+<span class="elide">⋯  openSettings: UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString))</span>
+<mark>    func centralManagerDidUpdateState(_ central: CBCentralManager) {</mark>
+<mark>        guard CBManager.authorization != .notDetermined else { return }</mark>
+        manager = nil
+        let answered = waiting
+        waiting = []
+<mark>        answered.forEach { $0.resume() }</mark>
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>Why <code>__request</code>?</strong> Kotlin's <code>suspend fun request</code> reaches Objective-C as a method with a completion handler. SKIE then adds an <code>async</code> Swift function named <code>request(permissions:)</code> for <em>calling</em> it, and "renames the original suspend function by adding the <code>__</code> prefix. This is done to avoid name collisions with the generated wrapper" (<a href="https://skie.touchlab.co/features/suspend">SKIE: Suspend functions</a>). To <em>implement</em> it, write the original. The compiler accepts it as an <code>async throws</code> function, because suspend functions "always have an <code>NSError*</code>/<code>Error</code> parameter in the completion handler" (<a href="https://kotlinlang.org/docs/native-objc-interop.html">Interoperability with Swift/Objective-C</a>).</li>
+    <li><strong>The prompt comes with the first use of Bluetooth.</strong> Apple: "The first time your app attempts to access a protected resource, the system prompts the person using the app for permission" (<a href="https://developer.apple.com/documentation/uikit/requesting-access-to-protected-resources">Requesting access to protected resources</a>). iOS has no "request Bluetooth permission" call, so the adapter makes that first use by creating a <code>CBCentralManager</code>.</li>
+    <li><strong><code>withCheckedContinuation</code></strong> suspends until the delegate hears back. It's the one-value relative of Lesson 02's <code>AsyncStream</code> continuation: the closure gets a handle, and one <code>resume()</code> ends the wait ("You must call a resume method exactly once on every execution path", <a href="https://developer.apple.com/documentation/swift/checkedcontinuation">CheckedContinuation</a>). <code>centralManagerDidUpdateState</code> is called whenever the manager's state changes, and Apple says to "Check this property [<code>authorization</code>] in your implementation of the delegate methods <code>centralManagerDidUpdateState(_:)</code>". Once it isn't <code>notDetermined</code> any more, the user has answered, so every waiting request resumes.</li>
+    <li><strong><code>CBCentralManagerOptionShowPowerAlertKey: false</code></strong>: by default "the system warns the user if the app instantiates the central manager when Bluetooth service isn't available" (<a href="https://developer.apple.com/documentation/corebluetooth/cbcentralmanageroptionshowpoweralertkey">docs</a>). This manager exists only to ask for the permission, so it shouldn't nag about Bluetooth being off. Lesson 13's scanner creates its own.</li>
+    <li><strong><code>openSettingsURLString</code></strong> is "The URL string you use to deep link to your app's custom settings in the Settings app" (<a href="https://developer.apple.com/documentation/uikit/uiapplication/opensettingsurlstring">docs</a>).</li>
+  </ol>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · the Simulator always says yes</span>
+    We installed the app fresh on the iOS 26.2 Simulator and reset its privacy settings with <code>xcrun simctl privacy booted reset all</code>. <code>CBManager.authorization</code> still read <code>.allowedAlways</code>: the row said "allowed" and no prompt ever appeared. <code>simctl privacy</code> lists calendar, contacts, location, photos, the media library, the microphone, motion, reminders and Siri, but no Bluetooth service. So on the Simulator you can test only the granted path. The prompt, a refusal and Settings need an iPhone (the agent brief lists them as device checks), and the app core's rules are covered by the tests in section 9. To see each status's UI, temporarily make <code>bluetoothStatus()</code> return it.
+  </div>
+
+  <h2>7. Wiring: each platform builds its own adapter</h2>
+  <p><code>appModule</code> stays platform-free. The platform adapter comes in through <code>initKoin</code>'s parameter:</p>
+  <figure class="excerpt">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/di/AppModule.kt</figcaption>
+<pre><code>internal val appModule = module {
+    single&lt;BleScanner&gt; { SimulatedBleScanner() }
+    single&lt;DeviceScanning&gt; { ScanningService(get()) }
+<mark>    single&lt;PermissionAccess&gt; { PermissionService(get()) }</mark>
+    viewModelOf(::DeviceListViewModel)
+}
+
+// The outbound adapters that each platform builds itself and passes to initKoin.
+<mark>internal fun platformModule(permissionChecker: PermissionChecker) = module {</mark>
+<mark>    single { permissionChecker }</mark>
+}
+
+// Call once, when the app process starts (Android: Application.onCreate; iOS: at launch).
+<mark>fun initKoin(permissionChecker: PermissionChecker) {</mark>
+    startKoin {
+<mark>        modules(appModule, platformModule(permissionChecker))</mark>
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>Why a parameter?</strong> The Android adapter needs a <code>Context</code>, and the iOS one is a Swift object that Kotlin can't construct. Each platform builds its own and hands it over. The signature still has no Koin type, so Swift's header stays Koin-free (Lesson 11): it now declares <code>doInitKoin(permissionChecker:)</code>.</li>
+    <li><strong><code>single { permissionChecker }</code></strong> registers the object under the parameter's type, <code>PermissionChecker</code>, which is what <code>PermissionService(get())</code> asks for.</li>
+    <li><strong><code>platformModule</code> is its own function</strong> so that the graph test can use the real one with a fake inside it (section 9).</li>
+  </ol>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorApplication.kt · both Android tracks</figcaption>
+<pre><code>class DeviceMonitorApplication : Application() {
+    // The Android permission adapter, one for the process. Koin hands it to the app core as
+    // its PermissionChecker, and an Activity or a Fragment lends it a result launcher.
+<mark>    lateinit var permissionChecker: AndroidPermissionChecker</mark>
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+<mark>        permissionChecker = AndroidPermissionChecker(this)</mark>
+<mark>        initKoin(permissionChecker)</mark>
+    }
+}</code></pre>
+  </figure>
+  <p>The adapter is built in <code>onCreate</code>, where Lesson 11 starts Koin: it runs once, "when the application is starting, before any activity, service, or receiver objects (excluding content providers) have been created" (<a href="https://developer.android.com/reference/android/app/Application#onCreate()">Application.onCreate</a>). A property initializer would run earlier, in the constructor, before Android attaches the <code>Application</code>'s <code>Context</code>, and the adapter opens its <code>SharedPreferences</code> as soon as it's built.</p>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/iOSApp.swift</figcaption>
+<pre><code>    init() {
+<mark>        AppModuleKt.doInitKoin(permissionChecker: IosPermissionChecker())</mark>
+    }</code></pre>
+  </figure>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/AppDelegate.swift</figcaption>
+<pre><code>    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -&gt; Bool {
+<mark>        AppModuleKt.doInitKoin(permissionChecker: IosPermissionChecker())</mark>
+        return true
+    }</code></pre>
+  </figure>
+  </div>
+  </div>
+  <p>Koin keeps the Swift object for the life of the process, as a <code>single</code>. Nothing on the Swift side keeps a reference, and nothing needs to: on iOS no screen lends the adapter anything.</p>
+
+  <h2>8. The ViewModel and the screens</h2>
+  <p>The ViewModel gets the second inbound port and three new events. The UI state gets one field, <code>bluetooth: PermissionStatus</code>:</p>
+  <figure class="excerpt" data-part="inbound">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/adapter/inbound/DeviceListViewModel.kt</figcaption>
+<pre><code>class DeviceListViewModel(
+    private val scanning: DeviceScanning,
+<mark>    private val permissions: PermissionAccess,</mark>
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(
+<mark>        DeviceListUiState(bluetooth = permissions.status(Permission.Bluetooth)),</mark>
+    )
+<span class="elide">⋯  uiState, scanJob, startScan, errorShown: as in m06; a second Job, permissionJob</span>
+    // The screen calls this each time it comes back to the foreground: the user may have
+    // changed the permission in Settings meanwhile.
+<mark>    fun refreshPermission() {</mark>
+        if (permissionJob?.isActive == true) return
+        _uiState.update { it.copy(bluetooth = permissions.status(Permission.Bluetooth)) }
+    }
+
+<mark>    fun requestPermission() {</mark>
+        if (permissionJob?.isActive == true) return
+        permissionJob = viewModelScope.launch {
+<mark>            val result = permissions.request(listOf(Permission.Bluetooth))</mark>
+            _uiState.update { it.copy(bluetooth = result.getValue(Permission.Bluetooth)) }
+        }
+    }
+<span class="elide">⋯  openSettings() calls permissions.openSettings()</span></code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>The constructor reads the status</strong>, so the screen never shows a placeholder. On Android that read needs the lent <code>Activity</code> (section 4), and both tracks have it by then. On Compose, <code>MainActivity</code> attaches before <code>setContent</code>, and the ViewModel is built when the screen is first composed. On XML, the Fragment attaches in <code>onStart</code> and first touches its <code>by viewModel()</code> property when its <code>repeatOnLifecycle(STARTED)</code> block starts collecting, which is after <code>onStart</code>. On API 36, a cold start after one refusal, and one after turning the permission off in Settings, showed "denied" + Ask again from the first frame on both tracks (screen recordings).</li>
+    <li><strong><code>refreshPermission</code> re-reads it</strong>, and every screen calls it when the app comes back to the foreground: the user may have changed it in Settings. It does nothing while a request is running, so it can't overwrite the answer that request is about to report.</li>
+    <li><strong>Koin needs no change for the new parameter</strong>: <code>viewModelOf(::DeviceListViewModel)</code> fills both with <code>get()</code>.</li>
+  </ol>
+  <p>Each screen shows one message and at most one button per status, enables Scan only for <code>Granted</code>, and re-reads the status when the app comes back to the foreground.</p>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListScreen.kt</figcaption>
+<pre><code>    // Back from Settings (or anywhere else): the permission may have changed.
+<mark>    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshPermission() }</mark>
+<span class="elide">⋯  DeviceListContent(…, bluetooth = state.bluetooth, onAllow = viewModel::requestPermission, onOpenSettings = viewModel::openSettings, …)</span>
+@Composable
+private fun PermissionRow(status: PermissionStatus, onAllow: () -&gt; Unit, onOpenSettings: () -&gt; Unit) {
+    val error = MaterialTheme.colorScheme.error
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+<mark>        when (status) {</mark>
+            PermissionStatus.Granted -&gt; Text(
+                "Bluetooth permission: allowed",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PermissionStatus.NotRequested -&gt; {
+                Text("Device Monitor needs Bluetooth permission to find nearby devices.")
+<mark>                TextButton(onClick = onAllow) { Text("Allow Bluetooth") }</mark>
+            }
+<span class="elide">⋯  Denied: red text + "Ask again"; PermanentlyDenied: red text + "Open Settings" (onOpenSettings); Restricted: red text only</span>
+        }
+    }
+}
+<span class="elide">⋯  in DeviceListContent, the Scan button:</span>
+<mark>            enabled = !isScanning &amp;&amp; bluetooth == PermissionStatus.Granted,</mark></code></pre>
+  </figure>
+  <p><code>LifecycleEventEffect</code> runs its block "when a specific event occurs" (<a href="https://developer.android.com/topic/libraries/architecture/compose">Lifecycle and Compose</a>), here every <code>ON_RESUME</code>. <code>when</code> over an enum is exhaustive, so a sixth status would fail to compile here until it has a row.</p>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListFragment.kt</figcaption>
+<pre><code>    // Back from Settings (or anywhere else): the permission may have changed.
+<mark>    override fun onResume() {</mark>
+        super.onResume()
+<mark>        viewModel.refreshPermission()</mark>
+    }
+<span class="elide">⋯  render() calls renderPermission(b, state.bluetooth) and enables Scan only for Granted</span>
+    private fun renderPermission(b: FragmentDeviceListBinding, status: PermissionStatus) {
+<mark>        val (message, action) = when (status) {</mark>
+            PermissionStatus.Granted -&gt; "Bluetooth permission: allowed" to null
+            PermissionStatus.NotRequested -&gt;
+                "Device Monitor needs Bluetooth permission to find nearby devices." to "Allow Bluetooth"
+<span class="elide">⋯  Denied → "Ask again"; PermanentlyDenied → "Open Settings"; Restricted → no action</span>
+        }
+<span class="elide">⋯  permissionText shows the message, in red unless Granted or NotRequested</span>
+<mark>        b.permissionButton.visibility = if (action == null) View.GONE else View.VISIBLE</mark>
+        b.permissionButton.text = action
+        b.permissionButton.setOnClickListener {
+            if (status == PermissionStatus.PermanentlyDenied) {
+<mark>                viewModel.openSettings()</mark>
+            } else {
+<mark>                viewModel.requestPermission()</mark>
+            }
+        }
+    }</code></pre>
+  </figure>
+  <p>The layout gets a <code>TextView</code> (<code>permissionText</code>) and a borderless <code>Button</code> (<code>permissionButton</code>) between the filter and Scan, and Scan's top now hangs from the button. A <code>GONE</code> view in a <code>ConstraintLayout</code> collapses to a point, so Scan moves up when there's no action. <code>render()</code> is still the one place that touches views (Lesson 08).</p>
+  </div>
+  </div>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListView.swift</figcaption>
+<pre><code><mark>    @Environment(\.scenePhase) private var scenePhase</mark>
+<span class="elide">⋯  body: DeviceListContent(…, bluetooth: state.bluetooth, onAllow: …, onOpenSettings: …), .alert, .task: as in m06</span>
+        // Back from Settings (or anywhere else): the permission may have changed.
+<mark>        .onChange(of: scenePhase) { _, phase in</mark>
+<mark>            if phase == .active { viewModel.refreshPermission() }</mark>
+        }
+<span class="elide">⋯  in DeviceListContent: PermissionRow above the Scan button, and</span>
+<mark>            .disabled(isScanning || bluetooth != .granted)</mark>
+<span class="elide">⋯</span>
+<span class="elide">⋯  private struct PermissionRow: View, with status, onAllow, onOpenSettings</span>
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+<mark>            switch status {</mark>
+            case .granted:
+                Text("Bluetooth permission: allowed")
+                    .foregroundStyle(.secondary)
+            case .notRequested:
+                Text("Device Monitor needs Bluetooth permission to find nearby devices.")
+<mark>                Button("Allow Bluetooth", action: onAllow)</mark>
+<span class="elide">⋯  .denied: red + "Ask again"; .permanentlyDenied: red + "Open Settings"; .restricted: red text only</span>
+            }
+        }
+        .font(.callout)
+    }
+}</code></pre>
+  </figure>
+  <p><code>scenePhase</code> is Lesson 04's app-level lifecycle seen from a view. It becomes <code>.active</code> again when the user comes back from Settings.</p>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  end of viewDidLoad:</span>
+        // Back from Settings (or anywhere else): the permission may have changed.
+<mark>        NotificationCenter.default.addObserver(</mark>
+<mark>            self, selector: #selector(sceneDidActivate),</mark>
+<mark>            name: UIScene.didActivateNotification, object: nil</mark>
+        )
+    }
+
+    @objc private func sceneDidActivate() {
+<mark>        viewModel.refreshPermission()</mark>
+    }
+<span class="elide">⋯  in render(): renderPermission(state.bluetooth), and the Scan button:</span>
+<mark>        scanButton.isEnabled = !isScanning &amp;&amp; state.bluetooth == .granted</mark>
+<span class="elide">⋯</span>
+    private func renderPermission(_ status: PermissionStatus) {
+<mark>        let (message, action): (String, String?) = switch status {</mark>
+        case .granted: ("Bluetooth permission: allowed", nil)
+<span class="elide">⋯  one case per status, as in the other tracks</span>
+        }
+        permissionLabel.text = message
+<span class="elide">⋯  label colour per status</span>
+        permissionButton.configuration?.title = action
+<mark>        permissionButton.isHidden = action == nil</mark>
+    }</code></pre>
+  </figure>
+  <p><code>UIScene.didActivateNotification</code> "indicates that the scene is now onscreen and responding to user events", and Apple suggests it to "refresh the contents of views" (<a href="https://developer.apple.com/documentation/uikit/uiscene/didactivatenotification">docs</a>). The button's action reads <code>viewModel.uiState.value.bluetooth</code> when tapped and calls <code>openSettings()</code> for <code>.permanentlyDenied</code>, <code>requestPermission()</code> otherwise. The label and button sit in a vertical stack between the filter and Scan. A hidden view in a <code>UIStackView</code> takes no space.</p>
+  </div>
+  </div>
+  <p data-both-only="ios" class="callout ts"><span class="label">UIKit vs SwiftUI · what changed and why</span>Same messages, same rule for Scan, different ways to hear "back in the foreground". SwiftUI reads <code>scenePhase</code> from the environment and reacts with <code>.onChange</code>. UIKit observes <code>UIScene.didActivateNotification</code> with a selector. Both are scene-level events, Lesson 04's app-level lifecycle, because a screen's own <code>viewWillAppear</code> doesn't fire when the user returns from another app.</p>
+
+  <h2>9. Tests</h2>
+  <p>The service is tested through its inbound port with a fake behind its outbound port, as in Lesson 11. The fake plays both the OS and the user:</p>
+  <figure class="excerpt" data-part="outbound">
+    <figcaption class="path">shared/src/commonTest/kotlin/com/example/devicemonitor/doubles/FakePermissionChecker.kt</figcaption>
+<pre><code><mark>class FakePermissionChecker : PermissionChecker {</mark>
+<mark>    val statuses = mutableMapOf&lt;Permission, PermissionStatus&gt;()</mark>
+<mark>    var answer = PermissionStatus.Granted</mark>
+<mark>    val prompts = mutableListOf&lt;List&lt;Permission&gt;&gt;() // one entry per system prompt shown</mark>
+    var settingsOpened = 0
+
+    override fun check(permission: Permission): PermissionStatus =
+        statuses[permission] ?: PermissionStatus.NotRequested
+
+    override suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt; {
+        prompts += permissions
+        permissions.forEach { statuses[it] = answer }
+        return permissions.associateWith { answer }
+    }
+<span class="elide">⋯  openSettings counts calls</span>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="inbound">
+    <figcaption class="path">shared/src/commonTest/kotlin/com/example/devicemonitor/core/PermissionServiceTest.kt</figcaption>
+<pre><code>    private val os = FakePermissionChecker()
+
+    // Through the inbound port, as the ViewModel calls it.
+<mark>    private val permissions: PermissionAccess = PermissionService(os)</mark>
+<span class="elide">⋯  aGrantedPermissionNeedsNoPrompt, promptsWhenNotRequestedAndReturnsTheAnswer, promptsAgainAfterADenial</span>
+    @Test
+<mark>    fun neverPromptsWhenOnlySettingsCanChangeIt() = runTest {</mark>
+        for (blocked in listOf(PermissionStatus.PermanentlyDenied, PermissionStatus.Restricted)) {
+            os.statuses[Permission.Bluetooth] = blocked
+
+            val result = permissions.request(listOf(Permission.Bluetooth))
+
+            assertEquals(blocked, result[Permission.Bluetooth])
+        }
+<mark>        assertEquals(emptyList(), os.prompts)</mark>
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>Four tests, one per path through the rule</strong>: granted (no prompt), not requested (one prompt, the answer comes back), denied (asked again), permanently denied or restricted (no prompt, status unchanged).</li>
+    <li><strong><code>prompts</code></strong> records each prompt "shown", so a test can prove a prompt <em>didn't</em> happen. That's the rule's whole point.</li>
+  </ol>
+  <p>The ViewModel tests get <code>TestPermissionAccess</code>, a test implementation of the inbound port next to <code>TestDeviceScanning</code>, with <code>current</code> (what <code>status</code> reports) and <code>answer</code> (what a request ends with). Three new tests: <code>startsWithThePermissionStatusThePortReports</code>, <code>showsTheAnswerToAPermissionRequest</code> and <code>rereadsThePermissionOnRefresh</code>. The existing <code>setUp</code> now builds <code>DeviceListViewModel(scanning, permissions)</code>.</p>
+  <figure class="excerpt" data-part="inbound">
+    <figcaption class="path">shared/src/commonTest/kotlin/com/example/devicemonitor/di/AppModuleTest.kt</figcaption>
+<pre><code>    // A fake stands in for the adapter each platform passes to initKoin.
+    @Test
+    fun buildsEveryViewModel() {
+        val koin = koinApplication {
+<mark>            modules(appModule, platformModule(FakePermissionChecker()))</mark>
+        }.koin
+
+        assertNotNull(koin.get&lt;DeviceListViewModel&gt;())
+    }</code></pre>
+  </figure>
+  <p>Without the platform module the graph test fails, now that the ViewModel needs <code>PermissionAccess</code> and its service needs a <code>PermissionChecker</code>. With the real <code>platformModule</code> and a fake inside it, the test checks the wiring that <code>initKoin</code> really uses.</p>
+  <p>The adapters have no automated tests: they're the thin layer over the OS, checked by running the app. The table in section 10 is that check.</p>
+
+  <h2>10. What actually happens</h2>
+  <p>We built m07 on all four tracks (Kotlin 2.4.20, Koin 4.2.2, activity 1.13.0, Xcode 26.2). <code>allTests</code> passed 16 of 16 on the JVM and 16 of 16 on the iOS simulator, and no build printed a compiler warning from our code. Then we ran every path from a fresh install, on both Android tracks. To allow it in the last step we used <code>adb shell pm grant</code> with the app in the background; on API 36 we also did it by hand in Settings → Permissions → Nearby devices, with the same result.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Step</th><th>Android 16 (API 36)</th><th>Android 11 (API 30)</th></tr>
+    <tr><td>launch</td><td colspan="2">"Device Monitor needs Bluetooth permission to find nearby devices." + Allow Bluetooth; Scan disabled</td></tr>
+    <tr><td>Allow Bluetooth</td><td>"Allow Device Monitor to find, connect to, and determine the relative position of nearby devices?"</td><td>"Allow Device Monitor to access this device's location?" (While using the app / Only this time / Deny)</td></tr>
+    <tr><td>Back on the dialog</td><td colspan="2">unchanged: still asks</td></tr>
+    <tr><td>refuse</td><td colspan="2">red "Bluetooth permission was denied…" + Ask again</td></tr>
+    <tr><td>Ask again, refuse</td><td colspan="2">red "Bluetooth permission is off. You can turn it on in Settings." + Open Settings</td></tr>
+    <tr><td>force-stop, relaunch</td><td colspan="2">still "off" + Open Settings</td></tr>
+    <tr><td>Open Settings</td><td colspan="2">Settings opens (on API 36 we checked the page: the app's App info); Back returns, still "off"</td></tr>
+    <tr><td>allow it while the app is in the background, return</td><td colspan="2">"Bluetooth permission: allowed", Scan enabled; Scan finds 5 devices, as in m06</td></tr>
+  </table>
+  </div>
+  <p>On API 36, allowing it in Settings kept the app's process (same pid). Turning it <em>off</em> in Settings ended the process, and returning to the app started it fresh, showing "denied" + Ask again from the first frame on both tracks (section 5's gotcha shows why that takes lending before the first read). Android's guide says the same of one-time permissions: "As with any permission, if the user revokes your app's one-time permission, your app's process terminates." That's one more reason the status lives in the OS and the adapter's memory, never only in the ViewModel. On the iOS Simulator both iOS tracks launch with "Bluetooth permission: allowed" and Scan enabled (section 6's gotcha).</p>
+  <p><strong>m07 is a natural stop</strong> when <code>allTests</code> is green on both platforms and the Android emulator walks the table above. Commit it. Lesson 13 replaces the simulated radio with real ones: the Android scanner will need <code>BLUETOOTH_SCAN</code>, and the iOS one will need the authorization this lesson asked for.</p>
+  <div class="callout ask-agent">
+    <span class="label">Ask your agent</span>
+    Ask your agent to trace one tap on "Allow Bluetooth" on your Android track, from the button to the red "denied" text: which function runs, on which object, and where the coroutine waits while the dialog is up. Then ask it to trace the same tap on iOS, and to name the one line where Kotlin calls into your Swift code.
+  </div>
+
+  <h2 id="retrieval-checks">Retrieval checks</h2>
+  <p>Answer from memory, without scrolling up.</p>
+  <div class="quiz mcq">
+    <p class="q">The user taps "Don't Allow" on iOS's Bluetooth prompt. Which status does the app core get?</p>
+    <div class="opts">
+      <button class="opt"><code>Denied</code>, so the app can ask again later</button>
+      <button class="opt" data-correct><code>PermanentlyDenied</code>, because iOS won't show the prompt again</button>
+      <button class="opt"><code>Restricted</code>, because the user can't change it any more</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">iOS asks once: after the first attempt "the system remembers the person's permission choice and doesn't prompt again", so the only way back is Settings: that's what <code>PermanentlyDenied</code> means. <code>Restricted</code> is a policy the user can't change at all.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Why does the Android adapter keep a memory of refusals in <code>SharedPreferences</code>?</p>
+    <div class="opts">
+      <button class="opt">Android forgets runtime permissions when the app is force-stopped</button>
+      <button class="opt" data-correct>"not granted, no rationale" can mean "never asked" or "refused for good", and Android doesn't say which</button>
+      <button class="opt">so the ViewModel can survive process death</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Android keeps the permission itself. What an app can't read back is whether the user refused it for good. A dismissed dialog and a second refusal look the same from the API, and only the adapter's memory tells them apart.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Which part of the app decides not to prompt for a permission that is <code>Restricted</code>?</p>
+    <div class="opts">
+      <button class="opt">the screen, by hiding the button</button>
+      <button class="opt">the iOS adapter, by returning early</button>
+      <button class="opt" data-correct><code>PermissionService</code>, in the app core</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">"Prompt only when a prompt can appear" is a rule of the app, the same on both platforms, so it lives in the service, and <code>neverPromptsWhenOnlySettingsCanChangeIt</code> tests it. The screens hide the button too, but that's presentation.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Why does Android UI code touch the permission adapter at all?</p>
+    <div class="opts">
+      <button class="opt" data-correct>only an Activity or a Fragment can register for a result, so one of them lends the adapter its launcher</button>
+      <button class="opt">the screen reads the answer and tells the ViewModel</button>
+      <button class="opt">Koin can't inject the adapter into the ViewModel</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Registration belongs to the Activity or Fragment and must happen every time one is created. It registers and lends the launcher; the adapter launches it and reads the answer.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">On the Compose track, why does <code>MainActivity</code> call <code>attach</code> before <code>setContent</code>?</p>
+    <div class="opts">
+      <button class="opt"><code>registerForActivityResult</code> throws once <code>setContent</code> has run</button>
+      <button class="opt" data-correct>composing the list screen builds its ViewModel, whose constructor reads the status, and only an attached <code>Activity</code> lets the adapter tell <code>Denied</code> apart</button>
+      <button class="opt">Koin can't start until the launcher is attached</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Without an <code>Activity</code> the adapter can't ask for the rationale, so a <code>Denied</code> permission reads as <code>PermanentlyDenied</code> or <code>NotRequested</code>. A composable that attaches in a <code>DisposableEffect</code> attaches only after that first read, and the wrong row can show for the first frames.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">In Swift, why is the method named <code>__request</code> and not <code>request</code>?</p>
+    <div class="opts">
+      <button class="opt">Swift reserves <code>request</code> for URL loading</button>
+      <button class="opt" data-correct>SKIE renames the original suspend function so its <code>async</code> wrapper can keep the name</button>
+      <button class="opt">two underscores mark the method as private to the module</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">SKIE generates <code>request(permissions:)</code> as an <code>async</code> function for callers, and "renames the original suspend function by adding the <code>__</code> prefix". A Swift class implementing the Kotlin interface implements the original.</p>
+  </div>
+
+  <h3>Mixed review (interleaved)</h3>
+  <div class="quiz mcq">
+    <p class="q">The ViewModel now takes two ports. What had to change in <code>appModule</code> for the ViewModel line? (Lesson 11)</p>
+    <div class="opts">
+      <button class="opt">a <code>get()</code> for the new parameter in <code>viewModelOf</code></button>
+      <button class="opt" data-correct>nothing: <code>viewModelOf(::DeviceListViewModel)</code> fills every parameter with <code>get()</code></button>
+      <button class="opt">a new <code>factory</code> definition for the ViewModel</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why"><code>viewModelOf</code> takes the constructor reference. What had to be added is a binding for each new type it asks for: <code>PermissionAccess</code>, and the <code>PermissionChecker</code> its service needs.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Returning from Settings, which iOS callback tells a UIKit screen to re-read the permission? (Lesson 04)</p>
+    <div class="opts">
+      <button class="opt"><code>viewWillAppear</code>, because the screen appears again</button>
+      <button class="opt" data-correct>a scene-level event: the scene becomes active again</button>
+      <button class="opt"><code>viewDidLoad</code>, because iOS reloads the view</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Leaving for another app and coming back is the app-level (scene) lifecycle. The view controller stayed on screen the whole time, so its view callbacks don't run.</p>
+  </div>
+
+  <h2 id="unaided-exercise">Unaided exercise</h2>
+  <div class="callout exercise">
+    <span class="label">Unaided exercise (no agent, on your m07 build)</span>
+    <ol>
+      <li><strong>Predict, then watch.</strong> On the Android emulator, uninstall the app and install it again. Before each step, write down the message and the button you expect, then do it: tap Allow Bluetooth and press Back; refuse; refuse again; force-stop and relaunch; allow it in Settings and come back. Then run <code>adb shell dumpsys package com.example.devicemonitor | grep BLUETOOTH_SCAN</code> after each refusal and match the flags to section 4's table.</li>
+      <li><strong>Write a test.</strong> Add <code>ignoresRequestPermissionWhileARequestIsRunning</code> to <code>DeviceListViewModelTest</code>. You'll need <code>TestPermissionAccess</code> to hold a request open until the test lets it finish (a <code>CompletableDeferred</code> works), and to count requests. Then break the rule on purpose: delete the <code>isActive</code> check in <code>requestPermission</code>, and watch your test fail on both platforms.</li>
+      <li><strong>Swap the adapter on iOS.</strong> Write a Swift class <code>RestrictedPermissionChecker</code> that implements <code>PermissionChecker</code> and always reports <code>.restricted</code>. Pass it to <code>doInitKoin</code> instead of the real one, and run the app on the Simulator. Predict first: does the "Allow Bluetooth" button appear? Can you scan? How many files did you touch? Then revert.</li>
+    </ol>
+  </div>
+
+  <h2 id="agent-brief">Agent brief</h2>
+  <p>Hand this to your coding agent, telling it your tracks. Then read its code against the walkthroughs above, run the tests and both apps yourself, and do the unaided exercise.</p>
+  <div class="callout brief copy-wrap">
+<pre class="brief-text">Lesson source: https://phongna-inn.github.io/carmd-kmp-course/lessons/12-permissions.html
+Before anything else, download the lesson and the reference pages it links, then read
+them in full. Don't use a summarising web fetch; it can leave out code.
+  mkdir -p .course    # in my workspace root, not inside demo/
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/lessons/12-permissions.html" -o .course/lesson-12.html
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/reference/architecture-di-testing-cheatsheet.html" -o .course/ref-architecture-di-testing-cheatsheet.html
+Lessons 09 and 11, which this brief's warning list points to; skipped if they're already there:
+  [ -f .course/lesson-09.html ] || curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/lessons/09-kotlin-swift-with-skie.html" -o .course/lesson-09.html
+  [ -f .course/lesson-11.html ] || curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/lessons/11-testing-and-koin.html" -o .course/lesson-11.html
+Use these files to answer my questions about this lesson without asking me for context.
+Then build what follows, using the lesson's "Full files" for my tracks exactly,
+except where the brief below says otherwise.
+
+Lesson 12 (Permissions): build milestone m07, the Bluetooth permission checked, requested
+and shown on every path, through the PermissionAccess inbound port and PermissionChecker
+outbound adapters, on top of m06.
+My tracks: Android = [Compose | XML], iOS = [SwiftUI | UIKit]  (default Compose + SwiftUI).
+Starting point: my m06 project in demo/ (Lesson 11). Use exactly the file contents shown in the
+lesson's "Full files" section for my tracks, including package lines, imports and comments. All
+paths are relative to demo/. Touch no file that isn't listed here.
+
+1. Shared code, all tracks:
+     shared/build.gradle.kts: replaced (androidMain gets androidx.activity).
+     add, under shared/src/commonMain/kotlin/com/example/devicemonitor/:
+       core/Permission.kt, core/PermissionService.kt, core/inbound/PermissionAccess.kt,
+       core/outbound/PermissionChecker.kt
+     replaced, same folder: adapter/inbound/DeviceListUiState.kt,
+       adapter/inbound/DeviceListViewModel.kt, di/AppModule.kt
+     add shared/src/androidMain/kotlin/com/example/devicemonitor/adapter/outbound/
+       AndroidPermissionChecker.kt
+     under shared/src/commonTest/kotlin/com/example/devicemonitor/:
+       add doubles/FakePermissionChecker.kt, doubles/TestPermissionAccess.kt,
+       core/PermissionServiceTest.kt; replace adapter/inbound/DeviceListViewModelTest.kt and
+       di/AppModuleTest.kt
+   Every other file in shared/ stays as in m06.
+
+2. Android, both tracks: androidApp/src/main/AndroidManifest.xml (my track's) and
+   androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorApplication.kt:
+   replaced. androidApp/build.gradle.kts stays as in m06.
+     Compose: MainActivity.kt and DeviceListScreen.kt: replaced.
+     XML: DeviceListFragment.kt and res/layout/fragment_device_list.xml: replaced.
+   iOS, both tracks: add iosApp/iosApp/IosPermissionChecker.swift; iosApp/project.yml:
+   replaced (my track's). Then run `xcodegen generate` in iosApp/: it adds the new Swift file
+   to the Xcode project and writes NSBluetoothAlwaysUsageDescription into iosApp/iosApp/Info.plist.
+   Do NOT edit Info.plist or the .xcodeproj by hand.
+     SwiftUI: iOSApp.swift and DeviceListView.swift: replaced.
+     UIKit: AppDelegate.swift and DeviceListViewController.swift: replaced.
+   Every other Android and iOS file stays as in m06.
+
+3. Test, then build both apps. From demo/:
+     ./gradlew :shared:allTests
+     ./gradlew :shared:compileCommonMainKotlinMetadata :androidApp:assembleDebug
+   Run on an emulator with Android 12 or newer (API 31+). Install it fresh, so that no
+   earlier answer is remembered:
+     adb uninstall com.example.devicemonitor; adb install androidApp/build/outputs/apk/debug/androidApp-debug.apk
+     adb shell am start -n com.example.devicemonitor/com.example.devicemonitor.android.MainActivity
+   iOS, from demo/iosApp/ (pick an installed iPhone simulator on iOS 17 or newer; if two
+   share a name, use id=&lt;UDID&gt;):
+     xcodebuild -project iosApp.xcodeproj -scheme iosApp \
+       -destination 'platform=iOS Simulator,name=&lt;that iPhone&gt;' -derivedDataPath build build
+   Run: `xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/iosApp.app`, then
+     `xcrun simctl launch booted com.example.devicemonitor`.
+
+Acceptance checks (run every one you can, on an emulator and a simulator):
+- ./gradlew :shared:allTests runs BOTH testAndroidHostTest and iosSimulatorArm64Test (show me
+  the task lines), and all 16 tests pass on each: 5 in ScanningServiceTest, 6 in
+  DeviceListViewModelTest, 4 in PermissionServiceTest, 1 in AppModuleTest. Show the counts from
+  the XML files in shared/build/test-results/.
+- All builds succeed with no compiler warnings (w: / warning:) from our own Kotlin or Swift
+  code, test code included (never use -q: it hides w: lines; read the output). Not from our
+  code, and expected: the same lines as in Lesson 11's brief (SKIE's "Configuration '…' was
+  resolved during configuration time", SLF4J "Failed to load class", Gradle's "Deprecated
+  Gradle features … Gradle 10", "Unable to strip the following libraries", Xcode's
+  "appintentsmetadataprocessor … warning: Metadata extraction skipped", xcodebuild's
+  "WARNING: Using the first of multiple matching destinations", and Gradle's "The Daemon will
+  expire …"). Xcode "note:" lines are not warnings.
+- The app core stays platform-free:
+    grep -rn 'import android\|import platform\.\|import org.koin' shared/src/commonMain/kotlin/com/example/devicemonitor/core
+  finds nothing. The exported header declares the new entry point and still no Koin types:
+    grep -c 'doInitKoinPermissionChecker' shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework/Headers/Shared.h
+  prints 1, and grep -c 'Koin_core' on the same file prints 0 (build that framework first
+  with ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 if it isn't there).
+- Android, every path, in this order, from the fresh install above (the row's texts are the
+  lesson's; the XML buttons show their text in capitals, so match case-insensitively):
+  1. Launch: "Device Monitor needs Bluetooth permission to find nearby devices." with an
+     "Allow Bluetooth" button, and Scan is disabled.
+  2. Tap Allow Bluetooth: the system dialog "Allow Device Monitor to find, connect to, and
+     determine the relative position of nearby devices?" appears. Press Back
+     (adb shell input keyevent KEYCODE_BACK): the row is unchanged (still Allow Bluetooth).
+  3. Tap Allow Bluetooth, then "Don't allow": red "Bluetooth permission was denied. Scanning
+     needs it to find nearby devices." with "Ask again".
+  4. Tap Ask again, then "Don't allow": red "Bluetooth permission is off. You can turn it on in
+     Settings." with "Open Settings".
+  5. adb shell am force-stop com.example.devicemonitor, then launch again: still "is off" +
+     Open Settings.
+  6. Tap Open Settings: Settings opens on the app's App info page. Press Back: still "is off".
+  7. Press Home, then
+       adb shell pm grant com.example.devicemonitor android.permission.BLUETOOTH_SCAN
+       adb shell pm grant com.example.devicemonitor android.permission.BLUETOOTH_CONNECT
+     and bring the app back (the am start line above): "Bluetooth permission: allowed", Scan
+     enabled. Tap Scan: rows appear one at a time and the status ends "Devices found: 5".
+  8. Fresh install again, tap Allow Bluetooth, and while the dialog is up rotate the emulator
+     (adb shell settings put system accelerometer_rotation 0; adb shell settings put system
+     user_rotation 1). Tap "Allow" in the dialog: the row says "Bluetooth permission: allowed".
+     Rotate back with user_rotation 0.
+  9. The first frame: fresh install again, tap Allow Bluetooth, then "Don't allow". Record a
+     cold start three times:
+       adb shell am force-stop com.example.devicemonitor
+       adb shell screenrecord --time-limit 6 /sdcard/rec.mp4 &amp;   (wait a second)
+       adb shell am start -W -n com.example.devicemonitor/com.example.devicemonitor.android.MainActivity
+     then adb pull /sdcard/rec.mp4 and extract every frame (ffmpeg -i rec.mp4 -vf setpts=N/TB
+     -fps_mode passthrough f%03d.png). Show me the first frames in which the permission row is visible:
+     in every recording, every such frame says "Bluetooth permission was denied…" with Ask
+     again, never "is off" or "needs Bluetooth permission".
+  After each refusal, show me the flags from
+    adb shell dumpsys package com.example.devicemonitor | grep BLUETOOTH_SCAN
+  (USER_SET after the first, USER_SET|USER_FIXED after the second).
+- Android, driving the emulator: find buttons with `adb shell uiautomator dump`. The dialog's
+  "Allow Device Monitor to …" title also starts with "Allow", so tap the node whose text is
+  exactly "Allow". The refusing button is "Don’t allow" with a typographic apostrophe
+  (U+2019), not a straight one: match it exactly, or by its prefix "Don".
+  To read whether Scan is enabled in the Compose track's dump, look at the clickable node
+  just before the "Scan" text (its enabled="false"): the text node itself always says true. A dump takes about 2 s: wait for the screen you expect before the next tap.
+  Before step 6, close any Settings left open by an earlier session (adb shell am force-stop com.android.settings; adb shell am force-stop com.google.android.permissioncontroller): otherwise Open Settings can land inside that old Settings task, on another page, and Back then stays in Settings instead of returning to the app.
+- Optional, if you have an emulator with Android 11 (API 30): the same steps ask for location
+  instead ("Allow Device Monitor to access this device's location?", with "While using the
+  app", "Only this time" and "Deny"), and every step's row matches. Grant with
+  android.permission.ACCESS_FINE_LOCATION in step 7.
+- iOS Simulator, both tracks: launch shows "Bluetooth permission: allowed" and Scan enabled
+  (the Simulator always reports Bluetooth as allowed; lesson section 6). If you can drive the
+  simulator (idb, or a throwaway XCUITest that launches the installed app by bundle ID; don't
+  script the Simulator window with System Events), tap Scan: five rows, "Devices found: 5".
+  Don't try to reach the other iOS paths on the Simulator. List them as device checks: the
+  prompt on Allow Bluetooth, "Don't Allow" → "is off" + Open Settings, Settings → back →
+  "allowed".
+Then walk me through each new or changed file line by line, tied to the lesson's walkthrough
+numbers, and show me where each box of the lesson's "who talks to whom" diagram is in the code.
+Do NOT do the unaided exercise for me.</pre>
+  </div>
+
+  <h2>Further reading</h2>
+  <ul>
+    <li>Android: <a href="https://developer.android.com/training/permissions/requesting">Request runtime permissions</a> (primary source), <a href="https://developer.android.com/develop/connectivity/bluetooth/bt-permissions">Bluetooth permissions</a>, <a href="https://developer.android.com/about/versions/11/privacy/permissions">Android 11 permission updates</a> (the "don't ask again" change and the <code>USER_SET</code>/<code>USER_FIXED</code> flags), <a href="https://developer.android.com/training/basics/intents/result">Get a result from an activity</a>, and Compose's <a href="https://developer.android.com/develop/ui/compose/libraries">requesting runtime permissions</a> section.</li>
+    <li>iOS: <a href="https://developer.apple.com/documentation/corebluetooth/cbmanagerauthorization">CBManagerAuthorization</a> (primary source), <a href="https://developer.apple.com/documentation/corebluetooth/cbmanager/authorization-swift.type.property">CBManager.authorization</a>, <a href="https://developer.apple.com/documentation/uikit/requesting-access-to-protected-resources">Requesting access to protected resources</a>, <a href="https://developer.apple.com/documentation/bundleresources/information-property-list/nsbluetoothalwaysusagedescription">NSBluetoothAlwaysUsageDescription</a>, and the Human Interface Guidelines on <a href="https://developer.apple.com/design/human-interface-guidelines/privacy">privacy</a>.</li>
+    <li>Kotlin and Swift: <a href="https://kotlinlang.org/docs/native-objc-interop.html">Interoperability with Swift/Objective-C</a> (suspend functions, enums), SKIE's <a href="https://skie.touchlab.co/features/suspend">suspend functions</a> and <a href="https://skie.touchlab.co/features/enums">enums</a>, and <a href="https://github.com/swiftlang/swift-evolution/blob/main/proposals/0423-dynamic-actor-isolation.md">SE-0423</a> (<code>@preconcurrency</code> conformances).</li>
+    <li><a href="../reference/architecture-di-testing-cheatsheet.html">Cheatsheet: the hexagon, Koin and tests</a>: where each new file of this lesson belongs.</li>
+    <li>Wisdom: in <a href="https://reddit.com/r/androiddev">r/androiddev</a>, search "shouldShowRequestPermissionRationale permanently denied" to see how other teams tell a permanent refusal from a first request.</li>
+  </ul>
+
+  <section id="full-files">
+    <h2>Full files</h2>
+    <p>Every file this lesson adds or changes, complete. Open one to check your work. Nothing is deleted, and everything else stays as in m06. <code>iosApp/iosApp/Info.plist</code> and <code>iosApp/iosApp.xcodeproj</code> are generated by <code>xcodegen generate</code> from <code>project.yml</code>. Each file is in the colour of its part of the app; the build files and the composition root carry none. Where two tracks change a file with the same path, its title names the track.</p>
+    <details class="full-file">
+      <summary>shared/build.gradle.kts</summary>
+<pre><code>plugins {
+    id("org.jetbrains.kotlin.multiplatform")
+    id("com.android.kotlin.multiplatform.library")
+    id("co.touchlab.skie")
+}
+
+kotlin {
+    android {
+        namespace = "com.example.devicemonitor.shared"
+        compileSdk = 37
+        minSdk = 26
+        withHostTest {}
+    }
+
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target -&gt;
+        target.binaries.framework {
+            baseName = "Shared"
+            isStatic = true
+            export("androidx.lifecycle:lifecycle-viewmodel:2.11.0")
+            binaryOption("bundleId", "com.example.devicemonitor.shared")
+        }
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            api("androidx.lifecycle:lifecycle-viewmodel:2.11.0")
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+            implementation("io.insert-koin:koin-core:4.2.2")
+            implementation("io.insert-koin:koin-core-viewmodel:4.2.2")
+        }
+        androidMain.dependencies {
+            implementation("androidx.activity:activity:1.13.0")
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+            implementation("app.cash.turbine:turbine:1.2.1")
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="core">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/core/Permission.kt</summary>
+<pre><code>package com.example.devicemonitor.core
+
+// A permission the app needs, in the app's terms. Each platform's adapter maps it to its
+// own: Bluetooth is two runtime permissions on Android 12 and later, one on iOS.
+enum class Permission { Bluetooth }
+
+// Where a permission stands, in terms of what the user can do next.
+enum class PermissionStatus {
+    NotRequested,      // not asked yet: a request shows the system prompt
+    Denied,            // refused, and the app may ask again (Android only)
+    PermanentlyDenied, // refused, and the system won't ask again: only Settings can change it
+    Restricted,        // blocked by a policy the user can't change, such as parental controls (iOS)
+    Granted,
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="inbound">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/core/inbound/PermissionAccess.kt</summary>
+<pre><code>package com.example.devicemonitor.core.inbound
+
+import com.example.devicemonitor.core.Permission
+import com.example.devicemonitor.core.PermissionStatus
+
+// Inbound port: what the app offers for the permissions it needs. The shared ViewModels
+// call it, and PermissionService implements it.
+interface PermissionAccess {
+    // Where the permission stands now. Never shows a prompt.
+    fun status(permission: Permission): PermissionStatus
+
+    // Asks the user for each permission the system can still prompt for, and returns where
+    // every one of them stands afterwards. Suspends while the system prompt is on screen.
+    suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt;
+
+    // Opens this app's page in the system Settings: the only way back from PermanentlyDenied.
+    fun openSettings()
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="outbound">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/core/outbound/PermissionChecker.kt</summary>
+<pre><code>package com.example.devicemonitor.core.outbound
+
+import com.example.devicemonitor.core.Permission
+import com.example.devicemonitor.core.PermissionStatus
+
+// Outbound port: what the app needs from the OS's permission system, in the app's terms.
+// One adapter per platform: Kotlin in androidMain, Swift in the iOS app.
+interface PermissionChecker {
+    // Reads the permission's status from the OS. Never shows a prompt.
+    fun check(permission: Permission): PermissionStatus
+
+    // Shows the system prompt for these permissions and returns each one's status after the
+    // user answers.
+    suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt;
+
+    // Opens this app's page in the system Settings.
+    fun openSettings()
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="core">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/core/PermissionService.kt</summary>
+<pre><code>package com.example.devicemonitor.core
+
+import com.example.devicemonitor.core.inbound.PermissionAccess
+import com.example.devicemonitor.core.outbound.PermissionChecker
+
+// Service: the app's permission rules. Prompt only for what the system can still prompt
+// for: never for a permission that is granted, permanently denied or restricted.
+class PermissionService(private val checker: PermissionChecker) : PermissionAccess {
+    override fun status(permission: Permission): PermissionStatus = checker.check(permission)
+
+    override suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt; {
+        val before = permissions.associateWith { checker.check(it) }
+        val askable = before.filterValues { it in ASKABLE }.keys.toList()
+        if (askable.isEmpty()) return before
+        return before + checker.request(askable)
+    }
+
+    override fun openSettings() = checker.openSettings()
+
+    private companion object {
+        val ASKABLE = setOf(PermissionStatus.NotRequested, PermissionStatus.Denied)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="inbound">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/adapter/inbound/DeviceListUiState.kt</summary>
+<pre><code>package com.example.devicemonitor.adapter.inbound
+
+import com.example.devicemonitor.core.Device
+import com.example.devicemonitor.core.PermissionStatus
+
+// Everything the device list shows that the user didn't type.
+data class DeviceListUiState(
+    val bluetooth: PermissionStatus = PermissionStatus.NotRequested,
+    val scan: ScanState = ScanState.Idle,
+    val errorMessage: String? = null,
+)
+
+sealed interface ScanState {
+    data object Idle : ScanState
+    data class Scanning(val found: List&lt;Device&gt;) : ScanState
+    data class Finished(val found: List&lt;Device&gt;) : ScanState
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="inbound">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/adapter/inbound/DeviceListViewModel.kt</summary>
+<pre><code>package com.example.devicemonitor.adapter.inbound
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.devicemonitor.core.Device
+import com.example.devicemonitor.core.Permission
+import com.example.devicemonitor.core.ScanException
+import com.example.devicemonitor.core.inbound.DeviceScanning
+import com.example.devicemonitor.core.inbound.PermissionAccess
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.seconds
+
+// Inbound adapter: turns the screen's events into calls on the DeviceScanning and
+// PermissionAccess ports, and the results into UI state. It knows the ports only.
+class DeviceListViewModel(
+    private val scanning: DeviceScanning,
+    private val permissions: PermissionAccess,
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(
+        DeviceListUiState(bluetooth = permissions.status(Permission.Bluetooth)),
+    )
+    val uiState: StateFlow&lt;DeviceListUiState&gt; = _uiState.asStateFlow()
+
+    private var scanJob: Job? = null
+    private var permissionJob: Job? = null
+
+    fun startScan(filter: String) {
+        if (scanJob?.isActive == true) return
+        _uiState.update { it.copy(scan = ScanState.Scanning(emptyList())) }
+        scanJob = viewModelScope.launch {
+            val found = mutableListOf&lt;Device&gt;()
+            try {
+                withTimeoutOrNull(SCAN_TIMEOUT) {
+                    scanning.scan(filter).collect { device -&gt;
+                        found += device
+                        _uiState.update { it.copy(scan = ScanState.Scanning(found.toList())) }
+                    }
+                }
+                _uiState.update { it.copy(scan = ScanState.Finished(found.toList())) }
+            } catch (e: ScanException) {
+                _uiState.update { it.copy(scan = ScanState.Idle, errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun errorShown() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    // The screen calls this each time it comes back to the foreground: the user may have
+    // changed the permission in Settings meanwhile.
+    fun refreshPermission() {
+        if (permissionJob?.isActive == true) return
+        _uiState.update { it.copy(bluetooth = permissions.status(Permission.Bluetooth)) }
+    }
+
+    fun requestPermission() {
+        if (permissionJob?.isActive == true) return
+        permissionJob = viewModelScope.launch {
+            val result = permissions.request(listOf(Permission.Bluetooth))
+            _uiState.update { it.copy(bluetooth = result.getValue(Permission.Bluetooth)) }
+        }
+    }
+
+    fun openSettings() {
+        permissions.openSettings()
+    }
+
+    companion object {
+        val SCAN_TIMEOUT = 3.seconds
+    }
+}</code></pre>
+    </details>
+    <details class="full-file">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/di/AppModule.kt</summary>
+<pre><code>package com.example.devicemonitor.di
+
+import com.example.devicemonitor.adapter.inbound.DeviceListViewModel
+import com.example.devicemonitor.adapter.outbound.SimulatedBleScanner
+import com.example.devicemonitor.core.PermissionService
+import com.example.devicemonitor.core.ScanningService
+import com.example.devicemonitor.core.inbound.DeviceScanning
+import com.example.devicemonitor.core.inbound.PermissionAccess
+import com.example.devicemonitor.core.outbound.BleScanner
+import com.example.devicemonitor.core.outbound.PermissionChecker
+import org.koin.core.context.startKoin
+import org.koin.core.module.dsl.viewModelOf
+import org.koin.dsl.module
+
+// The composition root, as a Koin module: which service implements each inbound port,
+// which adapter implements each outbound port, and how to build each ViewModel.
+internal val appModule = module {
+    single&lt;BleScanner&gt; { SimulatedBleScanner() }
+    single&lt;DeviceScanning&gt; { ScanningService(get()) }
+    single&lt;PermissionAccess&gt; { PermissionService(get()) }
+    viewModelOf(::DeviceListViewModel)
+}
+
+// The outbound adapters that each platform builds itself and passes to initKoin.
+internal fun platformModule(permissionChecker: PermissionChecker) = module {
+    single { permissionChecker }
+}
+
+// Call once, when the app process starts (Android: Application.onCreate; iOS: at launch).
+fun initKoin(permissionChecker: PermissionChecker) {
+    startKoin {
+        modules(appModule, platformModule(permissionChecker))
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="outbound">
+      <summary>shared/src/androidMain/kotlin/com/example/devicemonitor/adapter/outbound/AndroidPermissionChecker.kt</summary>
+<pre><code>package com.example.devicemonitor.adapter.outbound
+
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.result.ActivityResultLauncher
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.example.devicemonitor.core.Permission
+import com.example.devicemonitor.core.PermissionStatus
+import com.example.devicemonitor.core.outbound.PermissionChecker
+import kotlinx.coroutines.CompletableDeferred
+
+// Outbound adapter: Android's runtime permissions behind the PermissionChecker port.
+// Android lets only an Activity or a Fragment register for a result, so one of them lends
+// this adapter its launcher (attach), and tells it when the user answered (onResult).
+class AndroidPermissionChecker(private val context: Context) : PermissionChecker {
+    private var activity: Activity? = null
+    private var launcher: ActivityResultLauncher&lt;Array&lt;String&gt;&gt;? = null
+    private var answer: CompletableDeferred&lt;Unit&gt;? = null
+
+    // Android has no "refused for good" status to read back, so the adapter remembers, across
+    // launches, which permissions the user has refused.
+    private val refusals = context.getSharedPreferences("permission-refusals", Context.MODE_PRIVATE)
+
+    fun attach(activity: Activity, launcher: ActivityResultLauncher&lt;Array&lt;String&gt;&gt;) {
+        this.activity = activity
+        this.launcher = launcher
+    }
+
+    fun detach(launcher: ActivityResultLauncher&lt;Array&lt;String&gt;&gt;) {
+        if (this.launcher !== launcher) return
+        this.activity = null
+        this.launcher = null
+    }
+
+    // The launcher's callback. It passes its own Activity too, so that whichever of attach and
+    // onResult runs first after a rotation, the answer is read through the new Activity.
+    fun onResult(activity: Activity) {
+        this.activity = activity
+        answer?.complete(Unit)
+        answer = null
+    }
+
+    override fun check(permission: Permission): PermissionStatus {
+        val names = permission.androidNames()
+        return when {
+            names.all { isGranted(it) } -&gt; {
+                refusals.edit().remove(permission.name).apply()
+                PermissionStatus.Granted
+            }
+            // Refused before, and Android suggests explaining why: its dialog still shows.
+            shouldShowRationale(names) -&gt; {
+                refusals.edit().putBoolean(permission.name, true).apply()
+                PermissionStatus.Denied
+            }
+            // Refused before, and no explanation suggested any more: no dialog either.
+            refusals.getBoolean(permission.name, false) -&gt; PermissionStatus.PermanentlyDenied
+            else -&gt; PermissionStatus.NotRequested
+        }
+    }
+
+    override suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt; {
+        val launcher = checkNotNull(launcher) { "No Activity or Fragment has attached a permission launcher." }
+        val answered = CompletableDeferred&lt;Unit&gt;()
+        answer = answered
+        launcher.launch(permissions.flatMap { it.androidNames() }.toTypedArray())
+        answered.await()
+        return permissions.associateWith { check(it) }
+    }
+
+    override fun openSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
+    private fun isGranted(name: String) =
+        ContextCompat.checkSelfPermission(context, name) == PackageManager.PERMISSION_GRANTED
+
+    private fun shouldShowRationale(names: List&lt;String&gt;): Boolean {
+        val activity = activity ?: return false
+        return names.any { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
+    }
+
+    // Android 12 (API 31) gave Bluetooth its own runtime permissions. Before that, a BLE scan
+    // needed fine location instead.
+    private fun Permission.androidNames(): List&lt;String&gt; = when (this) {
+        Permission.Bluetooth -&gt;
+            if (Build.VERSION.SDK_INT &gt;= Build.VERSION_CODES.S) {
+                listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="outbound">
+      <summary>shared/src/commonTest/kotlin/com/example/devicemonitor/doubles/FakePermissionChecker.kt</summary>
+<pre><code>package com.example.devicemonitor.doubles
+
+import com.example.devicemonitor.core.Permission
+import com.example.devicemonitor.core.PermissionStatus
+import com.example.devicemonitor.core.outbound.PermissionChecker
+
+// Fake: an outbound adapter written for tests, behind the PermissionChecker port. The test
+// plays the OS and the user: it sets each status, and the answer the user gives a prompt.
+class FakePermissionChecker : PermissionChecker {
+    val statuses = mutableMapOf&lt;Permission, PermissionStatus&gt;()
+    var answer = PermissionStatus.Granted
+    val prompts = mutableListOf&lt;List&lt;Permission&gt;&gt;() // one entry per system prompt shown
+    var settingsOpened = 0
+
+    override fun check(permission: Permission): PermissionStatus =
+        statuses[permission] ?: PermissionStatus.NotRequested
+
+    override suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt; {
+        prompts += permissions
+        permissions.forEach { statuses[it] = answer }
+        return permissions.associateWith { answer }
+    }
+
+    override fun openSettings() {
+        settingsOpened++
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="core">
+      <summary>shared/src/commonTest/kotlin/com/example/devicemonitor/doubles/TestPermissionAccess.kt</summary>
+<pre><code>package com.example.devicemonitor.doubles
+
+import com.example.devicemonitor.core.Permission
+import com.example.devicemonitor.core.PermissionStatus
+import com.example.devicemonitor.core.inbound.PermissionAccess
+
+// Test implementation of the PermissionAccess inbound port, for ViewModel tests. The test
+// decides what status() reports and what a request ends with.
+class TestPermissionAccess : PermissionAccess {
+    var current = PermissionStatus.NotRequested
+    var answer = PermissionStatus.Granted
+    var settingsOpened = 0
+
+    override fun status(permission: Permission): PermissionStatus = current
+
+    override suspend fun request(permissions: List&lt;Permission&gt;): Map&lt;Permission, PermissionStatus&gt; {
+        current = answer
+        return permissions.associateWith { answer }
+    }
+
+    override fun openSettings() {
+        settingsOpened++
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="inbound">
+      <summary>shared/src/commonTest/kotlin/com/example/devicemonitor/core/PermissionServiceTest.kt</summary>
+<pre><code>package com.example.devicemonitor.core
+
+import com.example.devicemonitor.core.inbound.PermissionAccess
+import com.example.devicemonitor.doubles.FakePermissionChecker
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class PermissionServiceTest {
+    private val os = FakePermissionChecker()
+
+    // Through the inbound port, as the ViewModel calls it.
+    private val permissions: PermissionAccess = PermissionService(os)
+
+    @Test
+    fun aGrantedPermissionNeedsNoPrompt() = runTest {
+        os.statuses[Permission.Bluetooth] = PermissionStatus.Granted
+
+        val result = permissions.request(listOf(Permission.Bluetooth))
+
+        assertEquals(mapOf(Permission.Bluetooth to PermissionStatus.Granted), result)
+        assertEquals(emptyList(), os.prompts)
+    }
+
+    @Test
+    fun promptsWhenNotRequestedAndReturnsTheAnswer() = runTest {
+        os.answer = PermissionStatus.Denied
+
+        val result = permissions.request(listOf(Permission.Bluetooth))
+
+        assertEquals(PermissionStatus.Denied, result[Permission.Bluetooth])
+        assertEquals(listOf(listOf(Permission.Bluetooth)), os.prompts)
+    }
+
+    @Test
+    fun promptsAgainAfterADenial() = runTest {
+        os.statuses[Permission.Bluetooth] = PermissionStatus.Denied
+        os.answer = PermissionStatus.Granted
+
+        val result = permissions.request(listOf(Permission.Bluetooth))
+
+        assertEquals(PermissionStatus.Granted, result[Permission.Bluetooth])
+        assertEquals(1, os.prompts.size)
+    }
+
+    @Test
+    fun neverPromptsWhenOnlySettingsCanChangeIt() = runTest {
+        for (blocked in listOf(PermissionStatus.PermanentlyDenied, PermissionStatus.Restricted)) {
+            os.statuses[Permission.Bluetooth] = blocked
+
+            val result = permissions.request(listOf(Permission.Bluetooth))
+
+            assertEquals(blocked, result[Permission.Bluetooth])
+        }
+        assertEquals(emptyList(), os.prompts)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="inbound">
+      <summary>shared/src/commonTest/kotlin/com/example/devicemonitor/adapter/inbound/DeviceListViewModelTest.kt</summary>
+<pre><code>package com.example.devicemonitor.adapter.inbound
+
+import app.cash.turbine.test
+import com.example.devicemonitor.core.Device
+import com.example.devicemonitor.core.PermissionStatus
+import com.example.devicemonitor.core.ScanException
+import com.example.devicemonitor.doubles.TestDeviceScanning
+import com.example.devicemonitor.doubles.TestPermissionAccess
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+@OptIn(ExperimentalCoroutinesApi::class) // setMain, resetMain, currentTime
+class DeviceListViewModelTest {
+    private val obd = Device(id = "01", name = "OBD-II Adapter", rssi = -48)
+    private val heart = Device(id = "02", name = "Heart Rate Monitor", rssi = -61)
+
+    private val scanning = TestDeviceScanning()
+    private val permissions = TestPermissionAccess()
+    private lateinit var viewModel: DeviceListViewModel
+
+    @BeforeTest
+    fun setUp() {
+        // viewModelScope runs on Dispatchers.Main. In a test, Main becomes a test
+        // dispatcher whose clock runTest controls, so delays and timeouts take no real time.
+        Dispatchers.setMain(StandardTestDispatcher())
+        viewModel = DeviceListViewModel(scanning, permissions)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun showsDevicesAsTheyArriveThenFinishesAtTheTimeout() = runTest {
+        viewModel.uiState.test {
+            assertEquals(ScanState.Idle, awaitItem().scan)
+
+            viewModel.startScan(filter = "")
+            assertEquals(ScanState.Scanning(emptyList()), awaitItem().scan)
+
+            scanning.find(obd)
+            assertEquals(ScanState.Scanning(listOf(obd)), awaitItem().scan)
+
+            scanning.find(heart)
+            assertEquals(ScanState.Scanning(listOf(obd, heart)), awaitItem().scan)
+
+            // Nothing else is found: 3 s of virtual time pass, and the timeout ends the scan.
+            assertEquals(ScanState.Finished(listOf(obd, heart)), awaitItem().scan)
+            assertEquals(DeviceListViewModel.SCAN_TIMEOUT.inWholeMilliseconds, testScheduler.currentTime)
+        }
+    }
+
+    @Test
+    fun aFailedScanBecomesAMessageUntilItIsShown() = runTest {
+        scanning.failure = ScanException("Bluetooth is off")
+
+        viewModel.uiState.test {
+            skipItems(1) // Idle
+            viewModel.startScan(filter = "")
+            skipItems(1) // Scanning(emptyList())
+
+            val failed = awaitItem()
+            assertEquals(ScanState.Idle, failed.scan)
+            assertEquals("Bluetooth is off", failed.errorMessage)
+
+            viewModel.errorShown()
+            assertNull(awaitItem().errorMessage)
+        }
+    }
+
+    @Test
+    fun ignoresStartScanWhileAScanIsRunning() = runTest {
+        viewModel.startScan(filter = "obd")
+        testScheduler.runCurrent()
+        viewModel.startScan(filter = "heart")
+        testScheduler.runCurrent()
+
+        assertEquals(listOf("obd"), scanning.filters)
+    }
+
+    @Test
+    fun startsWithThePermissionStatusThePortReports() {
+        permissions.current = PermissionStatus.Denied
+
+        val fresh = DeviceListViewModel(scanning, permissions)
+
+        assertEquals(PermissionStatus.Denied, fresh.uiState.value.bluetooth)
+    }
+
+    @Test
+    fun showsTheAnswerToAPermissionRequest() = runTest {
+        permissions.answer = PermissionStatus.PermanentlyDenied
+
+        viewModel.requestPermission()
+        testScheduler.runCurrent()
+
+        assertEquals(PermissionStatus.PermanentlyDenied, viewModel.uiState.value.bluetooth)
+    }
+
+    @Test
+    fun rereadsThePermissionOnRefresh() {
+        permissions.current = PermissionStatus.Granted // changed in Settings meanwhile
+
+        viewModel.refreshPermission()
+
+        assertEquals(PermissionStatus.Granted, viewModel.uiState.value.bluetooth)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="inbound">
+      <summary>shared/src/commonTest/kotlin/com/example/devicemonitor/di/AppModuleTest.kt</summary>
+<pre><code>package com.example.devicemonitor.di
+
+import com.example.devicemonitor.adapter.inbound.DeviceListViewModel
+import com.example.devicemonitor.doubles.FakePermissionChecker
+import org.koin.dsl.koinApplication
+import kotlin.test.Test
+import kotlin.test.assertNotNull
+
+class AppModuleTest {
+    // Koin checks the graph only when something asks for an instance, at run time. This
+    // test asks for every screen's ViewModel, so a missing binding fails here, not in the app.
+    // A fake stands in for the adapter each platform passes to initKoin.
+    @Test
+    fun buildsEveryViewModel() {
+        val koin = koinApplication {
+            modules(appModule, platformModule(FakePermissionChecker()))
+        }.koin
+
+        assertNotNull(koin.get&lt;DeviceListViewModel&gt;())
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorApplication.kt · both Android tracks</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.app.Application
+import com.example.devicemonitor.adapter.outbound.AndroidPermissionChecker
+import com.example.devicemonitor.di.initKoin
+
+// Runs once per process, before any Activity: the place to start Koin.
+class DeviceMonitorApplication : Application() {
+    // The Android permission adapter, one for the process. Koin hands it to the app core as
+    // its PermissionChecker, and an Activity or a Fragment lends it a result launcher.
+    lateinit var permissionChecker: AndroidPermissionChecker
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        permissionChecker = AndroidPermissionChecker(this)
+        initKoin(permissionChecker)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/AndroidManifest.xml · Compose track</summary>
+<pre><code>&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
+    &lt;!-- Android 11 and lower: Bluetooth itself, and location for BLE scans. --&gt;
+    &lt;uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" /&gt;
+    &lt;uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" /&gt;
+    &lt;uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" /&gt;
+    &lt;!-- Android 12 and higher: the Nearby devices permissions. --&gt;
+    &lt;uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" /&gt;
+    &lt;uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /&gt;
+
+    &lt;application
+        android:name=".DeviceMonitorApplication"
+        android:label="Device Monitor"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"&gt;
+        &lt;activity android:name=".MainActivity" android:exported="true"&gt;
+            &lt;intent-filter&gt;
+                &lt;action android:name="android.intent.action.MAIN" /&gt;
+                &lt;category android:name="android.intent.category.LAUNCHER" /&gt;
+            &lt;/intent-filter&gt;
+        &lt;/activity&gt;
+    &lt;/application&gt;
+&lt;/manifest&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceListScreen.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.devicemonitor.adapter.inbound.DeviceListViewModel
+import com.example.devicemonitor.adapter.inbound.ScanState
+import com.example.devicemonitor.core.Device
+import com.example.devicemonitor.core.PermissionStatus
+import org.koin.compose.viewmodel.koinViewModel
+
+// Stateful: owns the filter text and connects the shared ViewModel to the content below.
+@Composable
+fun DeviceListScreen(
+    onDeviceClick: (Device) -&gt; Unit,
+    viewModel: DeviceListViewModel = koinViewModel(),
+) {
+    var filter by rememberSaveable { mutableStateOf("") }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Back from Settings (or anywhere else): the permission may have changed.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshPermission() }
+
+    DeviceListContent(
+        filter = filter,
+        onFilterChange = { filter = it },
+        bluetooth = state.bluetooth,
+        isScanning = state.scan is ScanState.Scanning,
+        devices = when (val scan = state.scan) {
+            ScanState.Idle -&gt; null
+            is ScanState.Scanning -&gt; scan.found
+            is ScanState.Finished -&gt; scan.found
+        },
+        onScan = { viewModel.startScan(filter) },
+        onAllow = viewModel::requestPermission,
+        onOpenSettings = viewModel::openSettings,
+        onDeviceClick = onDeviceClick,
+    )
+
+    state.errorMessage?.let { message -&gt;
+        AlertDialog(
+            onDismissRequest = viewModel::errorShown,
+            confirmButton = { TextButton(onClick = viewModel::errorShown) { Text("OK") } },
+            title = { Text("Scan failed") },
+            text = { Text(message) },
+        )
+    }
+}
+
+// Stateless: renders whatever it's given, reports events up.
+@Composable
+fun DeviceListContent(
+    filter: String,
+    onFilterChange: (String) -&gt; Unit,
+    bluetooth: PermissionStatus,
+    isScanning: Boolean,
+    devices: List&lt;Device&gt;?,
+    onScan: () -&gt; Unit,
+    onAllow: () -&gt; Unit,
+    onOpenSettings: () -&gt; Unit,
+    onDeviceClick: (Device) -&gt; Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Device Monitor", style = MaterialTheme.typography.headlineSmall)
+        OutlinedTextField(
+            value = filter,
+            onValueChange = onFilterChange,
+            label = { Text("Device name filter") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        PermissionRow(status = bluetooth, onAllow = onAllow, onOpenSettings = onOpenSettings)
+        Button(
+            onClick = onScan,
+            enabled = !isScanning &amp;&amp; bluetooth == PermissionStatus.Granted,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Scan")
+        }
+        ScanStatus(isScanning = isScanning, devices = devices)
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(devices.orEmpty(), key = { it.id }) { device -&gt;
+                DeviceRow(device = device, onClick = { onDeviceClick(device) })
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
+// One message and at most one action per permission status.
+@Composable
+private fun PermissionRow(status: PermissionStatus, onAllow: () -&gt; Unit, onOpenSettings: () -&gt; Unit) {
+    val error = MaterialTheme.colorScheme.error
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        when (status) {
+            PermissionStatus.Granted -&gt; Text(
+                "Bluetooth permission: allowed",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PermissionStatus.NotRequested -&gt; {
+                Text("Device Monitor needs Bluetooth permission to find nearby devices.")
+                TextButton(onClick = onAllow) { Text("Allow Bluetooth") }
+            }
+            PermissionStatus.Denied -&gt; {
+                Text("Bluetooth permission was denied. Scanning needs it to find nearby devices.", color = error)
+                TextButton(onClick = onAllow) { Text("Ask again") }
+            }
+            PermissionStatus.PermanentlyDenied -&gt; {
+                Text("Bluetooth permission is off. You can turn it on in Settings.", color = error)
+                TextButton(onClick = onOpenSettings) { Text("Open Settings") }
+            }
+            PermissionStatus.Restricted -&gt;
+                Text("Bluetooth is restricted on this device, so scanning isn't available.", color = error)
+        }
+    }
+}
+
+@Composable
+private fun ScanStatus(isScanning: Boolean, devices: List&lt;Device&gt;?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when {
+            isScanning -&gt; {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("Scanning…")
+            }
+            devices == null -&gt; Text("Tap Scan to look for devices.")
+            devices.isEmpty() -&gt; Text(
+                "No devices found. Try another filter.",
+                color = MaterialTheme.colorScheme.error,
+            )
+            else -&gt; Text("Devices found: ${devices.size}")
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(device: Device, onClick: () -&gt; Unit) {
+    ListItem(
+        headlineContent = { Text(device.name) },
+        supportingContent = { Text(device.id) },
+        trailingContent = { Text("${device.rssi} dBm") },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
+import androidx.compose.material3.MaterialTheme
+
+class MainActivity : ComponentActivity() {
+    // Android lets only an Activity or a Fragment register for a result, and only while it is
+    // being created, so the Activity registers here and lends the launcher to the adapter.
+    // It decides nothing: the adapter reads the answer.
+    private val permissionChecker by lazy {
+        (application as DeviceMonitorApplication).permissionChecker
+    }
+    private val permissionLauncher = registerForActivityResult(RequestMultiplePermissions()) {
+        permissionChecker.onResult(this)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        // Before setContent: the list screen's ViewModel reads the permission as soon as the
+        // screen is composed, and the adapter needs this Activity to read it right.
+        permissionChecker.attach(this, permissionLauncher)
+        setContent {
+            MaterialTheme {
+                DeviceMonitorApp()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        permissionChecker.detach(permissionLauncher)
+        super.onDestroy()
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/AndroidManifest.xml · XML track</summary>
+<pre><code>&lt;manifest xmlns:android="http://schemas.android.com/apk/res/android"&gt;
+    &lt;!-- Android 11 and lower: Bluetooth itself, and location for BLE scans. --&gt;
+    &lt;uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" /&gt;
+    &lt;uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" /&gt;
+    &lt;uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" /&gt;
+    &lt;!-- Android 12 and higher: the Nearby devices permissions. --&gt;
+    &lt;uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" /&gt;
+    &lt;uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /&gt;
+
+    &lt;application
+        android:name=".DeviceMonitorApplication"
+        android:label="Device Monitor"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar"&gt;
+        &lt;activity android:name=".MainActivity" android:exported="true"&gt;
+            &lt;intent-filter&gt;
+                &lt;action android:name="android.intent.action.MAIN" /&gt;
+                &lt;category android:name="android.intent.category.LAUNCHER" /&gt;
+            &lt;/intent-filter&gt;
+        &lt;/activity&gt;
+    &lt;/application&gt;
+&lt;/manifest&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceListFragment.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.graphics.Color
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
+import androidx.appcompat.app.AlertDialog
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.DividerItemDecoration
+import com.example.devicemonitor.adapter.inbound.DeviceListUiState
+import com.example.devicemonitor.adapter.inbound.DeviceListViewModel
+import com.example.devicemonitor.adapter.inbound.ScanState
+import com.example.devicemonitor.android.databinding.FragmentDeviceListBinding
+import com.example.devicemonitor.core.PermissionStatus
+import kotlinx.coroutines.launch
+import org.koin.androidx.viewmodel.ext.android.viewModel
+
+class DeviceListFragment : Fragment() {
+    // Survives rotation and the trip to the detail screen; cleared when this
+    // Fragment leaves the back stack for good.
+    private val viewModel: DeviceListViewModel by viewModel()
+
+    // Android lets only an Activity or a Fragment register for a result, and only while it is
+    // being created, so the Fragment registers here and lends the launcher to the adapter.
+    // It decides nothing: the adapter reads the answer.
+    private val permissionChecker by lazy {
+        (requireActivity().application as DeviceMonitorApplication).permissionChecker
+    }
+    private val permissionLauncher = registerForActivityResult(RequestMultiplePermissions()) {
+        permissionChecker.onResult(requireActivity())
+    }
+
+    private var binding: FragmentDeviceListBinding? = null
+    private var errorDialog: AlertDialog? = null
+    private val adapter = DeviceAdapter { device -&gt;
+        val nav = findNavController()
+        // A fast double tap delivers two clicks; only navigate from the list itself.
+        if (nav.currentDestination?.id == R.id.deviceList) {
+            nav.navigate(R.id.toDetail, Bundle().apply { putString("deviceId", device.id) })
+        }
+    }
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        val b = FragmentDeviceListBinding.inflate(inflater, container, false)
+        binding = b
+        b.deviceList.adapter = adapter
+        b.deviceList.addItemDecoration(DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL))
+        b.scanButton.setOnClickListener { viewModel.startScan(b.filterInput.text.toString()) }
+        return b.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect { render(it) }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        permissionChecker.attach(requireActivity(), permissionLauncher)
+    }
+
+    // Back from Settings (or anywhere else): the permission may have changed.
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshPermission()
+    }
+
+    override fun onStop() {
+        permissionChecker.detach(permissionLauncher)
+        super.onStop()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        errorDialog?.dismiss() // a dismiss() doesn't call the cancel listener, so the error stays in state
+        errorDialog = null
+        binding?.deviceList?.adapter = null // the adapter outlives the view; don't let it keep the old list
+        binding = null
+    }
+
+    // The one place that touches views: every new state ends here. The EditText keeps its
+    // own text (and restores it after rotation), so render() never sets it.
+    private fun render(state: DeviceListUiState) {
+        val b = binding ?: return
+        val isScanning = state.scan is ScanState.Scanning
+        val devices = when (val scan = state.scan) {
+            ScanState.Idle -&gt; null
+            is ScanState.Scanning -&gt; scan.found
+            is ScanState.Finished -&gt; scan.found
+        }
+        renderPermission(b, state.bluetooth)
+        b.scanButton.isEnabled = !isScanning &amp;&amp; state.bluetooth == PermissionStatus.Granted
+        b.progress.visibility = if (isScanning) View.VISIBLE else View.GONE
+        b.statusText.text = when {
+            isScanning -&gt; "Scanning…"
+            devices == null -&gt; "Tap Scan to look for devices."
+            devices.isEmpty() -&gt; "No devices found. Try another filter."
+            else -&gt; "Devices found: ${devices.size}"
+        }
+        b.statusText.setTextColor(if (devices?.isEmpty() == true &amp;&amp; !isScanning) Color.RED else Color.DKGRAY)
+        adapter.submitList(devices.orEmpty())
+        renderError(state.errorMessage)
+    }
+
+    // One message and at most one action per permission status.
+    private fun renderPermission(b: FragmentDeviceListBinding, status: PermissionStatus) {
+        val (message, action) = when (status) {
+            PermissionStatus.Granted -&gt; "Bluetooth permission: allowed" to null
+            PermissionStatus.NotRequested -&gt;
+                "Device Monitor needs Bluetooth permission to find nearby devices." to "Allow Bluetooth"
+            PermissionStatus.Denied -&gt;
+                "Bluetooth permission was denied. Scanning needs it to find nearby devices." to "Ask again"
+            PermissionStatus.PermanentlyDenied -&gt;
+                "Bluetooth permission is off. You can turn it on in Settings." to "Open Settings"
+            PermissionStatus.Restricted -&gt;
+                "Bluetooth is restricted on this device, so scanning isn't available." to null
+        }
+        b.permissionText.text = message
+        val blocked = status != PermissionStatus.Granted &amp;&amp; status != PermissionStatus.NotRequested
+        b.permissionText.setTextColor(if (blocked) Color.RED else Color.DKGRAY)
+        b.permissionButton.visibility = if (action == null) View.GONE else View.VISIBLE
+        b.permissionButton.text = action
+        b.permissionButton.setOnClickListener {
+            if (status == PermissionStatus.PermanentlyDenied) {
+                viewModel.openSettings()
+            } else {
+                viewModel.requestPermission()
+            }
+        }
+    }
+
+    private fun renderError(message: String?) {
+        if (message == null) {
+            errorDialog?.dismiss()
+            errorDialog = null
+        } else if (errorDialog == null) {
+            errorDialog = AlertDialog.Builder(requireContext())
+                .setTitle("Scan failed")
+                .setMessage(message)
+                .setPositiveButton("OK") { _, _ -&gt; viewModel.errorShown() }
+                .setOnCancelListener { viewModel.errorShown() }
+                .show()
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/layout/fragment_device_list.xml</summary>
+<pre><code>&lt;androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"&gt;
+
+    &lt;TextView
+        android:id="@+id/title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Device Monitor"
+        android:textAppearance="@style/TextAppearance.AppCompat.Headline"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" /&gt;
+
+    &lt;EditText
+        android:id="@+id/filterInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="Device name filter"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/title" /&gt;
+
+    &lt;TextView
+        android:id="@+id/permissionText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/filterInput" /&gt;
+
+    &lt;Button
+        android:id="@+id/permissionButton"
+        style="?attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/permissionText" /&gt;
+
+    &lt;Button
+        android:id="@+id/scanButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Scan"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/permissionButton" /&gt;
+
+    &lt;ProgressBar
+        android:id="@+id/progress"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/statusText"
+        app:layout_constraintBottom_toBottomOf="@id/statusText" /&gt;
+
+    &lt;TextView
+        android:id="@+id/statusText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="12dp"
+        app:layout_constraintStart_toEndOf="@id/progress"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/scanButton"
+        app:layout_goneMarginStart="0dp" /&gt;
+
+    &lt;androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/deviceList"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/statusText"
+        app:layout_constraintBottom_toBottomOf="parent" /&gt;
+&lt;/androidx.constraintlayout.widget.ConstraintLayout&gt;</code></pre>
+    </details>
+    <details class="full-file" data-part="outbound">
+      <summary>iosApp/iosApp/IosPermissionChecker.swift · both iOS tracks</summary>
+<pre><code>import CoreBluetooth
+import Shared
+import UIKit
+
+// Outbound adapter: Bluetooth permission on iOS, behind the Kotlin PermissionChecker port.
+// iOS has one Bluetooth permission. Reading CBManager.authorization never prompts; the
+// prompt appears when the app first uses Bluetooth, here by creating a CBCentralManager.
+@MainActor
+final class IosPermissionChecker: NSObject, @preconcurrency PermissionChecker,
+    @preconcurrency CBCentralManagerDelegate {
+    private var manager: CBCentralManager?
+    private var waiting: [CheckedContinuation&lt;Void, Never&gt;] = []
+
+    func check(permission: Permission) -&gt; PermissionStatus {
+        Self.bluetoothStatus()
+    }
+
+    // The Kotlin suspend fun. SKIE keeps the name `request` for the async function Swift
+    // calls, so the one Swift implements is `__request`.
+    func __request(permissions: [Permission]) async throws -&gt; [Permission: PermissionStatus] {
+        if CBManager.authorization == .notDetermined {
+            await withCheckedContinuation { continuation in
+                waiting.append(continuation)
+                if manager == nil {
+                    manager = CBCentralManager(
+                        delegate: self, queue: nil,
+                        options: [CBCentralManagerOptionShowPowerAlertKey: false]
+                    )
+                }
+            }
+        }
+        let status = Self.bluetoothStatus()
+        return Dictionary(uniqueKeysWithValues: permissions.map { ($0, status) })
+    }
+
+    func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    // Called on the main queue (queue: nil) whenever the manager's state changes, including
+    // once the user has answered the prompt.
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard CBManager.authorization != .notDetermined else { return }
+        manager = nil
+        let answered = waiting
+        waiting = []
+        answered.forEach { $0.resume() }
+    }
+
+    private static func bluetoothStatus() -&gt; PermissionStatus {
+        switch CBManager.authorization {
+        case .notDetermined: .notRequested
+        case .restricted: .restricted
+        case .denied: .permanentlyDenied // iOS never shows the prompt again
+        case .allowedAlways: .granted
+        @unknown default: .restricted
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui">
+      <summary>iosApp/project.yml · SwiftUI track</summary>
+<pre><code>name: iosApp
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources: [iosApp]
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: Device Monitor
+        UILaunchScreen: {}
+        NSBluetoothAlwaysUsageDescription: Device Monitor uses Bluetooth to find and connect to nearby devices.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.devicemonitor
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    preBuildScripts:
+      - name: Compile Kotlin Framework
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "YES" = "$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED" ]; then
+            echo "Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \"YES\""
+            exit 0
+          fi
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/iOSApp.swift</summary>
+<pre><code>import SwiftUI
+import Shared
+
+@main
+struct iOSApp: App {
+    init() {
+        AppModuleKt.doInitKoin(permissionChecker: IosPermissionChecker())
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/DeviceListView.swift</summary>
+<pre><code>import SwiftUI
+import Shared
+
+// Stateful: owns the filter text and connects the shared ViewModel to the content below.
+struct DeviceListView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var owner = ViewModelOwner()
+    @State private var filter = ""
+    @State private var state: DeviceListUiState?
+
+    var body: some View {
+        let viewModel: DeviceListViewModel = owner.viewModel()
+        let state = self.state ?? viewModel.uiState.value
+        DeviceListContent(
+            filter: $filter,
+            bluetooth: state.bluetooth,
+            isScanning: state.scan is ScanStateScanning,
+            devices: devices(in: state.scan),
+            onScan: { viewModel.startScan(filter: filter) },
+            onAllow: { viewModel.requestPermission() },
+            onOpenSettings: { viewModel.openSettings() }
+        )
+        .alert(
+            "Scan failed",
+            isPresented: Binding(
+                get: { state.errorMessage != nil },
+                set: { if !$0 { viewModel.errorShown() } }
+            ),
+            actions: { Button("OK") {} },
+            message: { Text(state.errorMessage ?? "") }
+        )
+        .task {
+            for await newState in viewModel.uiState {
+                self.state = newState
+            }
+        }
+        // Back from Settings (or anywhere else): the permission may have changed.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { viewModel.refreshPermission() }
+        }
+    }
+
+    // SKIE turns the sealed interface into a Swift enum, so this switch is exhaustive.
+    private func devices(in scan: ScanState) -&gt; [Device]? {
+        switch onEnum(of: scan) {
+        case .idle: nil
+        case .scanning(let scanning): scanning.found
+        case .finished(let finished): finished.found
+        }
+    }
+}
+
+// Stateless: renders whatever it's given, reports events up.
+struct DeviceListContent: View {
+    @Binding var filter: String
+    let bluetooth: PermissionStatus
+    let isScanning: Bool
+    let devices: [Device]?
+    let onScan: () -&gt; Void
+    let onAllow: () -&gt; Void
+    let onOpenSettings: () -&gt; Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("Device name filter", text: $filter)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+            PermissionRow(status: bluetooth, onAllow: onAllow, onOpenSettings: onOpenSettings)
+            Button(action: onScan) {
+                Text("Scan")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isScanning || bluetooth != .granted)
+            ScanStatus(isScanning: isScanning, devices: devices)
+            List(devices ?? [], id: \.id) { device in
+                NavigationLink(value: DeviceRoute(id: device.id)) {
+                    DeviceRow(device: device)
+                }
+            }
+            .listStyle(.plain)
+        }
+        .padding()
+        .navigationTitle("Device Monitor")
+    }
+}
+
+// One message and at most one action per permission status. SKIE makes the Kotlin enum a
+// Swift enum, so this switch is exhaustive.
+private struct PermissionRow: View {
+    let status: PermissionStatus
+    let onAllow: () -&gt; Void
+    let onOpenSettings: () -&gt; Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            switch status {
+            case .granted:
+                Text("Bluetooth permission: allowed")
+                    .foregroundStyle(.secondary)
+            case .notRequested:
+                Text("Device Monitor needs Bluetooth permission to find nearby devices.")
+                Button("Allow Bluetooth", action: onAllow)
+            case .denied:
+                Text("Bluetooth permission was denied. Scanning needs it to find nearby devices.")
+                    .foregroundStyle(.red)
+                Button("Ask again", action: onAllow)
+            case .permanentlyDenied:
+                Text("Bluetooth permission is off. You can turn it on in Settings.")
+                    .foregroundStyle(.red)
+                Button("Open Settings", action: onOpenSettings)
+            case .restricted:
+                Text("Bluetooth is restricted on this device, so scanning isn't available.")
+                    .foregroundStyle(.red)
+            }
+        }
+        .font(.callout)
+    }
+}
+
+private struct ScanStatus: View {
+    let isScanning: Bool
+    let devices: [Device]?
+
+    var body: some View {
+        if isScanning {
+            HStack {
+                ProgressView()
+                Text("Scanning…")
+            }
+        } else if let devices {
+            if devices.isEmpty {
+                Text("No devices found. Try another filter.")
+                    .foregroundStyle(.red)
+            } else {
+                Text("Devices found: \(devices.count)")
+            }
+        } else {
+            Text("Tap Scan to look for devices.")
+        }
+    }
+}
+
+private struct DeviceRow: View {
+    let device: Device
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(device.name)
+                Text(device.id)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("\(device.rssi) dBm")
+                .font(.caption)
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit">
+      <summary>iosApp/project.yml · UIKit track</summary>
+<pre><code>name: iosApp
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources: [iosApp]
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: "Device Monitor"
+        UILaunchScreen: {}
+        NSBluetoothAlwaysUsageDescription: "Device Monitor uses Bluetooth to find and connect to nearby devices."
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: "Default Configuration"
+                UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.devicemonitor
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    preBuildScripts:
+      - name: "Compile Kotlin Framework"
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "YES" = "$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED" ]; then
+            echo "Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \"YES\""
+            exit 0
+          fi
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/AppDelegate.swift</summary>
+<pre><code>import UIKit
+import Shared
+
+@main
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -&gt; Bool {
+        AppModuleKt.doInitKoin(permissionChecker: IosPermissionChecker())
+        return true
+    }
+
+    func application(_ application: UIApplication,
+                     configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -&gt; UISceneConfiguration {
+        UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/DeviceListViewController.swift</summary>
+<pre><code>import UIKit
+import Shared
+
+final class DeviceListViewController: UIViewController, UITableViewDelegate {
+    private let owner = ViewModelOwner()
+    private lazy var viewModel: DeviceListViewModel = owner.viewModel()
+    private var observation: Task&lt;Void, Never&gt;?
+
+    private let filterField = UITextField()
+    private let permissionLabel = UILabel()
+    private let permissionButton = UIButton(configuration: .plain())
+    private let scanButton = UIButton(configuration: .filled())
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let statusLabel = UILabel()
+    private let tableView = UITableView()
+    private lazy var dataSource = UITableViewDiffableDataSource&lt;Int, String&gt;(tableView: tableView) {
+        tableView, indexPath, deviceId in
+        let cell = tableView.dequeueReusableCell(withIdentifier: "device", for: indexPath)
+        var content = UIListContentConfiguration.subtitleCell()
+        if let device = SampleDevices.shared.find(id: deviceId) {
+            content.text = device.name
+            content.secondaryText = "\(device.id)   \(device.rssi) dBm"
+        }
+        cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Device Monitor"
+        navigationController?.navigationBar.prefersLargeTitles = true
+        view.backgroundColor = .systemBackground
+
+        filterField.placeholder = "Device name filter"
+        filterField.borderStyle = .roundedRect
+        filterField.autocorrectionType = .no
+        scanButton.configuration?.title = "Scan"
+        scanButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            viewModel.startScan(filter: filterField.text ?? "")
+        }, for: .touchUpInside)
+        permissionLabel.numberOfLines = 0
+        permissionLabel.font = .preferredFont(forTextStyle: .callout)
+        permissionButton.contentHorizontalAlignment = .leading
+        permissionButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            if viewModel.uiState.value.bluetooth == .permanentlyDenied {
+                viewModel.openSettings()
+            } else {
+                viewModel.requestPermission()
+            }
+        }, for: .touchUpInside)
+        statusLabel.numberOfLines = 0
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "device")
+        tableView.delegate = self
+
+        let statusRow = UIStackView(arrangedSubviews: [spinner, statusLabel])
+        statusRow.spacing = 8
+        let permissionRow = UIStackView(arrangedSubviews: [permissionLabel, permissionButton])
+        permissionRow.axis = .vertical
+        permissionRow.alignment = .leading
+        let stack = UIStackView(arrangedSubviews: [filterField, permissionRow, scanButton, statusRow, tableView])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.layoutMarginsGuide.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        render(viewModel.uiState.value)
+        // Back from Settings (or anywhere else): the permission may have changed.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(sceneDidActivate),
+            name: UIScene.didActivateNotification, object: nil
+        )
+    }
+
+    @objc private func sceneDidActivate() {
+        viewModel.refreshPermission()
+    }
+
+    // Collect only while on screen, like repeatOnLifecycle(STARTED) on Android.
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        observation?.cancel()
+        observation = Task {
+            for await state in viewModel.uiState {
+                render(state)
+            }
+        }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        observation?.cancel()
+        observation = nil
+    }
+
+    // The one place that touches views: every new state ends here. The text field owns
+    // its own text, so render() never sets it.
+    private func render(_ state: DeviceListUiState) {
+        let isScanning = state.scan is ScanStateScanning
+        // SKIE turns the sealed interface into a Swift enum, so this switch is exhaustive.
+        let devices: [Device]? = switch onEnum(of: state.scan) {
+        case .idle: nil
+        case .scanning(let scanning): scanning.found
+        case .finished(let finished): finished.found
+        }
+        renderPermission(state.bluetooth)
+        scanButton.isEnabled = !isScanning &amp;&amp; state.bluetooth == .granted
+        if isScanning { spinner.startAnimating() } else { spinner.stopAnimating() }
+        spinner.isHidden = !isScanning
+        if isScanning {
+            statusLabel.text = "Scanning…"
+        } else if let devices {
+            statusLabel.text = devices.isEmpty
+                ? "No devices found. Try another filter."
+                : "Devices found: \(devices.count)"
+        } else {
+            statusLabel.text = "Tap Scan to look for devices."
+        }
+        statusLabel.textColor = devices?.isEmpty == true &amp;&amp; !isScanning ? .systemRed : .label
+
+        var snapshot = NSDiffableDataSourceSnapshot&lt;Int, String&gt;()
+        snapshot.appendSections([0])
+        snapshot.appendItems((devices ?? []).map(\.id))
+        dataSource.apply(snapshot, animatingDifferences: true)
+        renderError(state.errorMessage)
+    }
+
+    // One message and at most one action per permission status. SKIE makes the Kotlin enum a
+    // Swift enum, so this switch is exhaustive.
+    private func renderPermission(_ status: PermissionStatus) {
+        let (message, action): (String, String?) = switch status {
+        case .granted: ("Bluetooth permission: allowed", nil)
+        case .notRequested: ("Device Monitor needs Bluetooth permission to find nearby devices.", "Allow Bluetooth")
+        case .denied: ("Bluetooth permission was denied. Scanning needs it to find nearby devices.", "Ask again")
+        case .permanentlyDenied: ("Bluetooth permission is off. You can turn it on in Settings.", "Open Settings")
+        case .restricted: ("Bluetooth is restricted on this device, so scanning isn't available.", nil)
+        }
+        permissionLabel.text = message
+        permissionLabel.textColor = switch status {
+        case .granted: .secondaryLabel
+        case .notRequested: .label
+        case .denied, .permanentlyDenied, .restricted: .systemRed
+        }
+        permissionButton.configuration?.title = action
+        permissionButton.isHidden = action == nil
+    }
+
+    private func renderError(_ message: String?) {
+        guard let message, presentedViewController == nil else { return }
+        let alert = UIAlertController(title: "Scan failed", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+            self?.viewModel.errorShown()
+        })
+        present(alert, animated: true)
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        guard let deviceId = dataSource.itemIdentifier(for: indexPath) else { return }
+        navigationController?.pushViewController(DeviceDetailViewController(deviceId: deviceId), animated: true)
+    }
+}</code></pre>
+    </details>
+  </section>
+
+  <nav class="progress-links">
+    <a href="11-testing-and-koin.html">← 11 Testing the app core + Koin</a>
+    <a href="13-ble-concepts-and-scan.html">Next: 13 BLE: concepts and scan →</a>
+  </nav>
+</main>
+</body>
+</html>

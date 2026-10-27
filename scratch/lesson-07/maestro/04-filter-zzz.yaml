@@ -1,0 +1,22 @@
+# m02 · filter "zzz": red error, no rows. Check the colour on the screenshot.
+appId: com.example.devicemonitor
+---
+- launchApp:
+    clearState: true
+# A cold debug build can show a blank first frame for a few seconds.
+- extendedWaitUntil:
+    visible: "Device Monitor"
+    timeout: 15000
+- tapOn: "Device name filter"
+- inputText: "zzz"
+- tapOn:
+    text: "Scan"
+    # The spinner never "settles"; don't wait for it or the scan is over.
+    waitToSettleTimeoutMs: 300
+    retryTapIfNoChange: false
+- extendedWaitUntil:
+    visible: "No devices found. Try another filter."
+    timeout: 5000
+- assertNotVisible: "OBD-II Adapter"
+- assertNotVisible: "Tire Pressure Sensor"
+- takeScreenshot: 04-not-found

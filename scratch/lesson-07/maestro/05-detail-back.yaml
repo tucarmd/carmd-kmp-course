@@ -1,0 +1,40 @@
+# m02 · row tap opens the detail; Back returns to the list with filter and results kept.
+# Android: the on-screen Back button, then system back. iOS back button and swipe-back are
+# checked by the XCUITest in ../xcuitest (Maestro has no reliable iOS back).
+appId: com.example.devicemonitor
+---
+- launchApp:
+    clearState: true
+# A cold debug build can show a blank first frame for a few seconds.
+- extendedWaitUntil:
+    visible: "Device Monitor"
+    timeout: 15000
+- tapOn: "Device name filter"
+- inputText: "sens"
+- tapOn:
+    text: "Scan"
+    # The spinner never "settles"; don't wait for it or the scan is over.
+    waitToSettleTimeoutMs: 300
+    retryTapIfNoChange: false
+- extendedWaitUntil:
+    visible: "Devices found: 1"
+    timeout: 5000
+- tapOn: "Tire Pressure Sensor"
+- assertVisible: "ID: C4:7C:8D:6A:01:12"
+- assertVisible: "Signal: -67 dBm"
+- takeScreenshot: 05-detail
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn: "Back"
+      - assertVisible: "Devices found: 1"
+      - assertVisible: "sens"
+      - assertVisible: "Tire Pressure Sensor"
+      - tapOn: "Tire Pressure Sensor"
+      - assertVisible: "ID: C4:7C:8D:6A:01:12"
+      - back
+      - assertVisible: "Devices found: 1"
+      - assertVisible: "sens"
+      - assertVisible: "Tire Pressure Sensor"
+      - takeScreenshot: 05-back-kept

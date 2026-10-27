@@ -2272,6 +2272,93 @@ Bên Kotlin cũng vậy: `rememberCoroutineScope()` và `lifecycleScope` mặc �
 
 ---
 
+## How to test
+
+Phần này **không có trong bản gốc**. Đây là cách tự kiểm tra bản build m01 của bạn: test tay từng bước, và test tự động bằng Maestro, XCUITest và một script `adb`.
+Mọi bước dưới đây đã chạy thật ngày 2026-10-27 trên emulator Pixel 8 (Android 14) và simulator iPhone 17 (iOS 26.5): Maestro Android 4/4, Maestro iOS 4/4, XCUITest 3/3, script xoay máy 5/5.
+
+### Chuẩn bị
+
+Build và cài theo đúng lệnh của brief (mục Brief cho agent), từ thư mục project m01 (`demo/`, hoặc `app/` ở tag `m01`):
+
+```bash
+./gradlew :shared:compileCommonMainKotlinMetadata :androidApp:assembleDebug
+adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
+adb shell am start -n com.example.devicemonitor/com.example.devicemonitor.android.MainActivity
+
+cd iosApp && xcodegen generate
+xcodebuild -project iosApp.xcodeproj -scheme iosApp \
+  -destination 'platform=iOS Simulator,id=<UDID>' -derivedDataPath build build
+xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/iosApp.app
+xcrun simctl launch booted com.example.devicemonitor
+```
+
+Đọc output build: không được có dòng `w:` (Kotlin) hay `warning:` từ file Swift của mình. Bốn dòng sau là bình thường: "Deprecated Gradle features … Gradle 10", "Unable to strip the following libraries", "appintentsmetadataprocessor … Metadata extraction skipped", "Using the first of multiple matching destinations".
+
+### Manual test
+
+Làm lần lượt trên cả hai máy. Mỗi bước ghi kết quả đúng phải thấy.
+
+1. **Mở app.** Thấy icon (Bluetooth trên Android, ăng-ten trên iOS) và chữ "Device Monitor" nằm ngay cạnh icon, ô "Device name filter", nút Scan rộng hết màn hình, dòng "Tap Scan to look for devices.". Android: không có gì nằm dưới thanh trạng thái, icon thanh trạng thái màu tối, đọc rõ. Emulator vừa khởi động có thể trắng vài giây ở khung hình đầu, chờ một chút.
+2. **Bấm Scan, ô lọc để trống.** Ngay lập tức: nút xám lại (không bấm được), vòng quay hiện cạnh chữ "Scanning…". Khoảng 1,5 giây sau: "Devices found: 5", nút bấm được lại.
+3. **Gõ `sens`, bấm Scan.** Kết quả: "Devices found: 1" (chỉ "Tire Pressure Sensor" khớp).
+4. **Gõ `zzz`, bấm Scan.** Kết quả: "No devices found. Try another filter." **màu đỏ**, nút bấm được lại.
+5. **Quét lại sau lỗi đỏ.** "Scanning…" phải có màu chữ bình thường, không đỏ. Đây đúng là bug thứ hai của toy ở mục 1, và bản declarative không mắc.
+6. **Android, xoay máy khi đang có kết quả.** Chạy `adb shell settings put system accelerometer_rotation 0`, rồi `adb shell settings put system user_rotation 1`. Ô lọc và dòng kết quả vẫn còn.
+7. **Android, xoay máy trong lúc quét.** Về dọc (`user_rotation 0`), bấm Scan, rồi xoay ngang ngay. Màn hình về "Tap Scan to look for devices.", chữ trong ô lọc vẫn còn. Đây là hành vi đúng của m01 (mục 6), bài 08 mới sửa.
+8. **Trả máy về như cũ.** `adb shell settings put system user_rotation 0` và `adb shell settings put system accelerometer_rotation 1`.
+
+iOS không tạo lại màn hình khi xoay, nên bước 6–7 chỉ làm trên Android.
+
+### Automation test
+
+Tất cả file test nằm trong [`scratch/lesson-06/`](https://github.com/tucarmd/carmd-kmp-course/tree/main/scratch/lesson-06):
+
+- `maestro/01-launch.yaml` … `04-filter-zzz.yaml`: bốn flow Maestro dùng chung cho Android và iOS, vì hai app cùng id `com.example.devicemonitor`.
+- `android-rotation.sh`: script `adb` kiểm tra bước 6–7 ở trên, in `PASS`/`FAIL` từng ý, và tự trả cài đặt xoay về như cũ.
+- `xcuitest/`: project XCUITest dùng một lần, mở app iOS đã cài theo bundle id để kiểm tra lúc đang quét.
+- [`TESTING.md`](https://github.com/tucarmd/carmd-kmp-course/blob/main/scratch/lesson-06/TESTING.md): bản hướng dẫn đầy đủ bằng tiếng Anh cho AI/LLM đọc và tự chạy. Gồm bảng trạng thái phải đúng, lệnh build, lệnh chạy, check cần nhìn ảnh, các bẫy đã gặp và mẫu báo cáo.
+
+Chạy từ thư mục gốc của repo:
+
+```bash
+maestro --device emulator-5554 test --test-output-dir /tmp/m01-android scratch/lesson-06/maestro/
+maestro --device <UDID>        test --test-output-dir /tmp/m01-ios     scratch/lesson-06/maestro/
+ANDROID_SERIAL=emulator-5554 scratch/lesson-06/android-rotation.sh
+cd scratch/lesson-06/xcuitest && xcodegen generate && \
+  xcodebuild test -project Probe.xcodeproj -scheme Probe \
+  -destination 'platform=iOS Simulator,id=<UDID>' -derivedDataPath build
+```
+
+Muốn agent làm hộ thì đưa nó đoạn này (giữ tiếng Anh để copy):
+
+```text
+Verify milestone m01 (Lesson 06) on an Android emulator and an iOS simulator.
+Read scratch/lesson-06/TESTING.md in full and follow it step by step.
+The app is in demo/ (or app/ at tag m01). Report every check as PASS / FAIL / NOT RUN,
+using the report format at the end of TESTING.md. Do not change any app source file.
+```
+
+Mỗi check tự động phủ phần nào:
+
+| Check | Android | iOS |
+|---|---|---|
+| Màn hình lúc mở | Maestro `01` | Maestro `01` |
+| "Scanning…" và nút bị tắt khi đang quét | Maestro `02` + ảnh `02-scanning` | XCUITest `testScanAll` |
+| "Devices found: 5" | Maestro `02` | Maestro `02`, XCUITest |
+| Lọc `sens` → 1 | Maestro `03` | Maestro `03`, XCUITest |
+| Lọc `zzz` → lỗi | Maestro `04` | Maestro `04`, XCUITest |
+| Lỗi màu đỏ | nhìn ảnh `04-not-found` | nhìn ảnh `04-not-found` |
+| Xoay máy | `android-rotation.sh` | không cần |
+
+!!! warning "Bẫy đã gặp khi viết phần test này"
+    - **Maestro trên iOS không bắt kịp 1,5 giây "Scanning…".** Một lệnh `tapOn` trên iOS mất khoảng 4 giây, nên flow `02` chỉ kiểm tra lúc đang quét trên Android. Trên iOS, XCUITest làm việc đó: nó kiểm tra được cả nút tắt (`isEnabled == false`), vòng quay, và chữ `…` là **một** ký tự chứ không phải ba dấu chấm.
+    - **Compose giấu trạng thái `enabled` với Maestro.** Chữ "Scan" là một node con luôn báo `enabled=true`, còn node nút thật thì không có chữ. Vì vậy các flow không kiểm tra `enabled`; trên Android, xem ảnh chụp lúc quét.
+    - **Emulator bận thì app trắng màn hoặc báo "isn't responding".** Lỗi là `Waited 5000ms for FocusEvent` khi emulator vừa khởi động nguội (load 15 trên 4 nhân). Chờ `adb shell cat /proc/loadavg` xuống dưới khoảng 5 rồi chạy lại. Không phải bug của app: m01 không chặn main thread (`delay` chỉ tạm dừng coroutine).
+    - **Cắm cả điện thoại lẫn emulator** thì luôn ghi `--device` cho Maestro và `ANDROID_SERIAL` cho `adb`, nếu không lệnh xoay máy sẽ đổi cài đặt trên điện thoại thật.
+
+---
+
 ## Sau bài này tự làm được gì
 
 Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 07.
@@ -2288,3 +2375,4 @@ Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 07.
 - [ ] Đoán đúng chuyện gì xảy ra khi xoay máy lúc có kết quả và lúc đang quét, trên Android và iOS (xem [A9](#a9-xoay-may-vi-sao-android-quen-viec-ang-chay)).
 - [ ] Tránh được ba bất ngờ về layout: frame trên label, content hugging, chữ in hoa của nút AppCompat.
 - [ ] Làm xong 3 bài tự làm ở trên mà không cần agent.
+- [ ] Tự chạy được manual test và automation test của m01, và đọc được kết quả (xem [How to test](#how-to-test)).

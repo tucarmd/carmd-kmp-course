@@ -1,0 +1,14 @@
+# m01 · launch: header, filter field, Scan button, idle status.
+appId: com.example.devicemonitor
+---
+- launchApp:
+    clearState: true
+# A cold debug build can show a blank first frame for a few seconds.
+- extendedWaitUntil:
+    visible: "Device Monitor"
+    timeout: 15000
+- assertVisible: "Device Monitor"
+- assertVisible: "Device name filter"
+- assertVisible: "Scan"
+- assertVisible: "Tap Scan to look for devices."
+- takeScreenshot: 01-launch

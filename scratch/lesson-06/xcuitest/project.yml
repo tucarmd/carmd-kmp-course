@@ -1,0 +1,36 @@
+name: Probe
+options:
+  bundleIdPrefix: com.example.probe
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  Host:
+    type: application
+    platform: iOS
+    sources: [Host]
+    info:
+      path: Host/Info.plist
+      properties:
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.probe.host
+        SWIFT_VERSION: "5.0"
+  ProbeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [ProbeUITests]
+    dependencies:
+      - target: Host
+    settings:
+      base:
+        TEST_TARGET_NAME: Host
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Probe:
+    build:
+      targets:
+        Host: all
+    test:
+      targets: [ProbeUITests]

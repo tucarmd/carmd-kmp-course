@@ -1,0 +1,28 @@
+# m01 · empty filter: Scan disables, "Scanning…" (one "…" character), then all 5 devices.
+# The 1.5 s scanning window is checked on Android only: a Maestro tap on iOS takes ~4 s,
+# so iOS checks that window with the XCUITest in ../xcuitest instead.
+appId: com.example.devicemonitor
+---
+- launchApp:
+    clearState: true
+# A cold debug build can show a blank first frame for a few seconds.
+- extendedWaitUntil:
+    visible: "Device Monitor"
+    timeout: 15000
+- tapOn:
+    text: "Scan"
+    # The spinner never "settles"; don't wait for it or the scan is over.
+    waitToSettleTimeoutMs: 300
+    retryTapIfNoChange: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible: "Scanning…"
+      - assertVisible: "Scan"
+      - takeScreenshot: 02-scanning
+- extendedWaitUntil:
+    visible: "Devices found: 5"
+    timeout: 5000
+- assertVisible: "Scan"
+- takeScreenshot: 02-found-5

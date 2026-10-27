@@ -78,6 +78,21 @@ extra_javascript:
   - javascripts/phone-toy.js
   - javascripts/lesson03-labs.js
   - javascripts/lesson09-labs.js
+  - javascripts/sorter.js
+  - javascripts/lesson10-labs.js
+  - javascripts/lesson11-labs.js
+  - javascripts/lesson12-labs.js
+  - javascripts/lesson13-labs.js
+  - javascripts/lesson14-labs.js
+  - javascripts/lesson15-labs.js
+  - javascripts/lesson16-labs.js
+  - javascripts/lesson17-labs.js
+  - javascripts/lesson18-labs.js
+  - javascripts/lesson19-labs.js
+  - javascripts/lesson20-labs.js
+  - javascripts/lessone1-labs.js
+  - javascripts/lessone2-labs.js
+  - javascripts/lessone3-labs.js
 
 extra:
   social:
@@ -99,6 +114,23 @@ nav:
           - "7. UI declarative: danh sách": lessons/07-ui-declarative-danh-sach.md
           - "8. ViewModel dùng chung": lessons/08-viewmodel-dung-chung.md
           - "9. Kotlin↔Swift với SKIE": lessons/09-kotlin-swift-voi-skie.md
+          - "10. Lục giác: app core, port, adapter": lessons/10-luc-giac.md
+      - "Tuần 3":
+          - "11. Kiểm thử app core + Koin": lessons/11-kiem-thu-va-koin.md
+          - "12. Quyền truy cập": lessons/12-quyen-truy-cap.md
+          - "13. BLE: khái niệm và quét": lessons/13-ble-khai-niem-va-quet.md
+          - "14. BLE: kết nối": lessons/14-ble-ket-noi.md
+          - "15. BLE: khám phá và đọc": lessons/15-ble-kham-pha-va-doc.md
+      - "Tuần 4":
+          - "16. BLE: notify, ngắt kết nối, lỗi": lessons/16-ble-notify-ngat-ket-noi-loi.md
+          - "17. Trạng thái máy và kho log": lessons/17-trang-thai-may-va-kho-log.md
+          - "18. Giám sát nền: dựng nó": lessons/18-giam-sat-nen.md
+          - "19. Giám sát nền: bảng hành vi": lessons/19-bang-hanh-vi-nen.md
+          - "20. Tích hợp và kiểm tra đầu cuối": lessons/20-tich-hop-va-kiem-tra-cuoi.md
+      - "Mở rộng":
+          - "E1. API client với Ktor": lessons/e1-api-client-voi-ktor.md
+          - "E2. Camera và media": lessons/e2-camera-va-media.md
+          - "E3. Kable: thư viện thay thế": lessons/e3-kable-thu-vien-thay-the.md
 
 validation:
   links:

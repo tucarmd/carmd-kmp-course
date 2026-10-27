@@ -37,7 +37,7 @@
 [data-part="ios"]      { --part: var(--c-ios);      --part-soft: var(--c-ios-soft); }
 
 /* ---- sơ đồ ---- */
-.md-typeset figure.diagram { margin: 1.25rem auto 1.5rem; display: block; max-width: 40rem; }
+.md-typeset figure.diagram { margin: 1.25rem auto 1.5rem; display: block; width: 100%; max-width: 48rem; }
 .md-typeset figure.diagram > svg { display: block; width: 100%; height: auto; }
 .md-typeset figure.diagram > figcaption { font-size: .85rem; color: var(--dg-ink-soft); margin-top: .5rem; max-width: none; text-align: left; font-style: normal; }
 .dg { font-family: var(--md-text-font-family); font-size: 13px; }
@@ -218,3 +218,19 @@
 .md-typeset .lab-grid,
 .md-typeset .lab-apps { grid-template-columns: 1fr; }
 .md-typeset .toy-phones .phone, .md-typeset .lab-phone { max-width: 24rem; }
+
+/* ---- trò phân loại (sorter.js) — chép từ assets/style.css của khoá gốc ---- */
+.md-typeset .sorter { border: 1px solid var(--dg-rule); border-radius: 6px; padding: .6rem 1.1rem .9rem; margin: 1.25rem 0; background: var(--dg-card); }
+.md-typeset .sort-item { padding: .55rem 0; border-bottom: 1px solid var(--dg-rule); }
+.md-typeset .sort-item:last-of-type { border-bottom: none; }
+.md-typeset .sort-label { display: block; margin-bottom: .35rem; font-size: .8rem; }
+.md-typeset .sort-choices { display: flex; flex-wrap: wrap; gap: .35rem; }
+.md-typeset .sort-choices button { font-family: var(--md-code-font-family); font-size: .7rem; padding: .25rem .6rem; border: 1px solid var(--dg-rule); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.md-typeset .sort-choices button:hover { border-color: var(--dg-accent); }
+.md-typeset .sort-choices button.picked-right { border-color: var(--dg-ok); background: var(--dg-ok); color: var(--dg-card); }
+.md-typeset .sort-choices button.picked-wrong { border-color: var(--dg-err); color: var(--dg-err); text-decoration: line-through; }
+.md-typeset .sort-item .why { display: none; margin: .4rem 0 0; font-size: .78rem; color: var(--dg-ink-soft); }
+.md-typeset .sort-item.answered .why { display: block; }
+.md-typeset .sort-score { display: none; margin: .6rem 0 0; font-weight: 600; }
+.md-typeset .sort-score.show { display: block; }
+

@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 — Declarative UI: Lists, Async, Navigation</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/switcher.js" defer></script>
+<script src="../assets/quiz.js" defer></script>
+<script src="../assets/copy.js" defer></script>
+</head>
+<body>
+<main>
+  <p class="kicker">Lesson 07 · Week 2 · Day 7 · Native Device Monitor course</p>
+  <h1>Declarative UI: Lists, Async, Navigation</h1>
+  <div class="meta">
+    <span class="tag">~2.5 h · +1 h per extra UI track</span>
+    <span class="tag">Milestone: m02 Device Monitor shell</span>
+    <span class="tag">Prereq: <a href="06-declarative-ui-components.html">06</a></span>
+  </div>
+  <div class="switchers">
+    <div class="switcher" data-platform="android"></div>
+    <div class="switcher" data-platform="ios"></div>
+  </div>
+
+  <div class="mission-tie">
+    <strong>Why this matters:</strong> a scan produces many devices, they arrive late, and the user taps one to see more. Every screen in the Native Device Monitor is some mix of those three things: a list, an update that arrives asynchronously, and a second screen. Today you finish the shell, milestone <strong>m02</strong>: m01's screen gains a list of results, with rows that keep their identity, and a detail screen you reach by tapping a row. The data is still the fake scan from shared Kotlin. From Lesson 08 a shared ViewModel drives this same screen, and from Lesson 13 a real BLE radio does.
+  </div>
+
+  <p><span class="tag">Primary source</span> Android's <a href="https://developer.android.com/develop/ui/compose/lists">Lists and grids</a> for keys, and <a href="https://developer.android.com/guide/components/processes-and-threads">Processes and threads</a> for the main-thread rule (both are short). iOS learners add Apple's <a href="https://developer.apple.com/documentation/swiftui/navigationstack">NavigationStack</a> page.</p>
+  <p><span class="tag">Tracks</span> The concepts (sections 2, 3 and 4) are the same on every track. The screens differ per track, and XML Views and UIKit keep the <code>render()</code> discipline from Lesson 06. Each excerpt shows only the lines its notes explain, and the complete files are in <a href="#full-files">Full files</a> at the end.</p>
+
+  <h2>What changes from m01</h2>
+  <p>m01 had one screen that showed how many devices a scan found. m02 is a two-screen app, so the files move around. The m01 screen's code becomes the <strong>list screen</strong>, in a new file that keeps the same filter, Scan button and status line and adds the rows. The header icon moves to the detail screen. The brief at the end lists exactly which m01 files to delete.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>What</th><th>m01</th><th>m02</th></tr>
+    <tr><td>screens</td><td>one: filter, Scan, status</td><td>two: the list screen (filter, Scan, status, rows) and a detail screen</td></tr>
+    <tr><td>state kept after a scan</td><td>how many devices were found</td><td>which devices were found</td></tr>
+    <tr><td>shared Kotlin</td><td><code>matching(filter)</code></td><td>plus <code>find(id)</code></td></tr>
+    <tr><td>navigation</td><td>none</td><td>a back stack with two screens</td></tr>
+  </table>
+  </div>
+
+  <h2>1. Results as state, and a lookup by id</h2>
+  <p>A list needs the devices themselves, so the state changes from a count to the results: a list that is <code>null</code> before the first scan (so the screen can still tell "never scanned" from "scanned, found nothing") and possibly empty afterwards. The status line is still derived from it: "Devices found: N" is the list's size.</p>
+  <p>Shared Kotlin gets one new function, <code>find(id)</code>. It returns the device with that id, or <code>null</code>. Two places use it below: Compose needs it to rebuild the rows from saved ids, and the detail screen needs it to show a device from nothing but its id.</p>
+  <figure class="excerpt">
+    <figcaption class="path">shared/src/commonMain/kotlin/com/example/devicemonitor/SampleDevices.kt</figcaption>
+<pre><code><span class="elide">⋯  package, the five sample devices, matching()</span>
+<mark>    fun find(id: String): Device? = all.firstOrNull { it.id == id }</mark>
+}</code></pre>
+  </figure>
+  <p>Swift calls it as <code>SampleDevices.shared.find(id: deviceId)</code>. It returns <code>Device?</code>, which Swift sees as an optional, so Swift code unwraps it with <code>if let</code>.</p>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListScreen.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+// Stateful: owns the screen's state and the scan side effect.
+@Composable
+<mark>fun DeviceListScreen(onDeviceClick: (Device) -&gt; Unit) {</mark>
+    var filter by rememberSaveable { mutableStateOf("") }
+<mark>    var foundIds by rememberSaveable { mutableStateOf&lt;List&lt;String&gt;?&gt;(null) }</mark>
+    var isScanning by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    DeviceListContent(
+<span class="elide">⋯  filter, onFilterChange, isScanning</span>
+<mark>        devices = foundIds?.mapNotNull { SampleDevices.find(it) },</mark>
+        onScan = {
+            val query = filter
+            isScanning = true
+<mark>            foundIds = null</mark>
+            scope.launch {
+                delay(1_500)
+<mark>                foundIds = SampleDevices.matching(query).map { it.id }</mark>
+                isScanning = false
+            }
+        },
+<mark>        onDeviceClick = onDeviceClick,</mark>
+    )</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>The state holds ids, not devices.</strong> <code>rememberSaveable</code> saves the types a <code>Bundle</code> can hold: strings, numbers, Parcelables. A list of id strings qualifies, and our build kept it across rotation. A Kotlin <code>Device</code> from shared code isn't one of those types, and saving it would need a custom <code>Saver</code>.</li>
+    <li><strong><code>devices</code> is derived</strong> on every recomposition: <code>find</code> turns each saved id back into its device. The ids are the single source of truth, and the rows are computed from them, as the status line was in m01.</li>
+    <li><strong><code>onScan</code></strong> is m01's handler with ids in place of a count: it clears the results synchronously (<code>foundIds = null</code>), then waits, then stores the ids of the matches. <code>val query = filter</code> still captures the filter at tap time.</li>
+    <li><strong><code>onDeviceClick</code></strong> is a new event, passed up unchanged. The list screen reports "this device was tapped" and doesn't know what happens next. Section 4 shows who decides.</li>
+    <li>The stateful wrapper and the stateless content are still two functions (<code>DeviceListScreen</code> and <code>DeviceListContent</code>), the same split as <code>DeviceMonitorScreen</code> and <code>DeviceMonitorContent</code> in m01. In Lesson 08 a shared ViewModel replaces the wrapper, and the content function doesn't change.</li>
+  </ol>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListFragment.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+class DeviceListFragment : Fragment() {
+    // Screen state lives in fields; render() copies it into the views.
+<mark>    private var foundIds: ArrayList&lt;String&gt;? = null</mark>
+    private var isScanning = false
+<span class="elide">⋯  binding and adapter</span>
+<mark>    override fun onCreate(savedInstanceState: Bundle?) {</mark>
+        super.onCreate(savedInstanceState)
+<mark>        foundIds = savedInstanceState?.getStringArrayList("foundIds")</mark>
+    }
+<span class="elide">⋯  onCreateView and onDestroyView</span>
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+<mark>        outState.putStringArrayList("foundIds", foundIds)</mark>
+    }
+
+    private fun scan(query: String) {
+        isScanning = true
+<mark>        foundIds = null</mark>
+        render()
+        lifecycleScope.launch {
+            delay(1_500)
+<mark>            foundIds = ArrayList(SampleDevices.matching(query).map { it.id })</mark>
+<span class="elide">⋯  isScanning = false, render()</span></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListFragment.kt</figcaption>
+<pre><code><span class="elide">⋯  the state, onCreate, onSaveInstanceState and scan()</span>
+    // The one place that touches views: every state change ends here.
+    private fun render() {
+<mark>        val b = binding ?: return</mark>
+<mark>        val devices = foundIds?.mapNotNull { SampleDevices.find(it) }</mark>
+        b.scanButton.isEnabled = !isScanning
+        b.progress.visibility = if (isScanning) View.VISIBLE else View.GONE
+        b.statusText.text = when {
+            isScanning -&gt; "Scanning…"
+            devices == null -&gt; "Tap Scan to look for devices."
+            devices.isEmpty() -&gt; "No devices found. Try another filter."
+            else -&gt; "Devices found: ${devices.size}"
+        }
+        b.statusText.setTextColor(if (devices?.isEmpty() == true) Color.RED else Color.DKGRAY)
+<mark>        adapter.submitList(devices.orEmpty())</mark>
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>State is two fields:</strong> <code>foundIds</code> and <code>isScanning</code>. The views are a <em>copy</em> of it, and <code>render()</code> is the only function that writes to views, as in m01. The state now holds the ids of the found devices rather than a count.</li>
+    <li><strong><code>onSaveInstanceState</code> + <code>getStringArrayList</code></strong> is <code>rememberSaveable</code> by hand: the results survive rotation as a list of ids. The <code>EditText</code> saves its own text, because it has an id. A <code>Bundle</code> holds strings, not our <code>Device</code>, so <code>render()</code> turns the ids back into devices with <code>find</code>.</li>
+    <li><strong><code>scan()</code></strong> sets state and renders <em>synchronously</em>, then launches the slow part in the Fragment's <code>lifecycleScope</code>. That scope lives as long as the Fragment, not its views. So a scan started before you open the detail screen finishes while you're there, and its results show when you return. Rotation destroys the Fragment and cancels the scan (section 5).</li>
+    <li><strong><code>binding</code> is nullable.</strong> A Fragment outlives its views: when you navigate to the detail screen, the Fragment stays on the back stack but <code>onDestroyView</code> runs. <code>render()</code> returns early when there is no view. When you come back, <code>onCreateView</code> builds fresh views and calls <code>render()</code>, so they show the current state.</li>
+    <li><strong>The last line of <code>render()</code></strong> hands the derived list to the adapter. Section 2 covers what the adapter does with it.</li>
+  </ol>
+  <p data-both-only="android" class="callout ts"><span class="label">XML vs Compose · what changed and why</span>Same state, same rules, different enforcement. Compose re-runs <code>DeviceListContent</code> whenever state changes, so a forgotten update can't happen. In XML, nothing stops a click listener from setting <code>statusText</code> directly and skipping <code>render()</code>. The <code>rememberSaveable</code> line is three methods in XML (<code>onCreate</code>, <code>onSaveInstanceState</code>, the field). The Fragment also needs the nullable-binding dance, because its views die before it does.</p>
+  </div>
+  </div>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListView.swift</figcaption>
+<pre><code><span class="elide">⋯  imports</span>
+struct DeviceListView: View {
+    @State private var filter = ""
+<mark>    @State private var devices: [Device]? = nil</mark>
+    @State private var isScanning = false
+<span class="elide">⋯  body</span>
+    private func scan() {
+        let query = filter
+        isScanning = true
+<mark>        devices = nil</mark>
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+<mark>            devices = SampleDevices.shared.matching(filter: query)</mark>
+            isScanning = false
+        }
+    }</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListView.swift</figcaption>
+<pre><code><span class="elide">⋯  DeviceListView</span>
+private struct ScanStatus: View {
+    let isScanning: Bool
+<mark>    let devices: [Device]?</mark>
+
+    var body: some View {
+        if isScanning {
+<span class="elide">⋯  the spinner</span>
+<mark>        } else if let devices {</mark>
+            if devices.isEmpty {
+                Text("No devices found. Try another filter.")
+                    .foregroundStyle(.red)
+            } else {
+                Text("Devices found: \(devices.count)")
+            }
+        } else {
+            Text("Tap Scan to look for devices.")
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>The state holds the devices themselves.</strong> <code>devices: [Device]?</code> uses <code>nil</code> for "never scanned". Unlike Android's saved state, <code>@State</code> isn't squeezed through a <code>Bundle</code>, so nothing needs converting to ids.</li>
+    <li><strong><code>scan()</code></strong> changes state synchronously, then starts a <code>Task</code> for the wait. A <code>View</code> is <code>@MainActor</code>, so the <code>Task</code> inherits the main actor, and the writes after <code>await</code> happen on the main thread (section 3). It's an unstructured task (Lesson 02): leaving the screen doesn't cancel it. That's harmless here, because the list is the root screen. Lesson 08 moves the scan into a ViewModel that owns its lifetime.</li>
+    <li><strong><code>ScanStatus</code></strong> is m01's status view with <code>devices</code> in place of <code>foundCount</code>: an <code>if</code>/<code>else</code> over state. The count is <code>devices.count</code>, derived each time.</li>
+  </ol>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  imports</span>
+final class DeviceListViewController: UIViewController, UITableViewDelegate {
+    // Screen state lives in properties; render() copies it into the views.
+<mark>    private var devices: [Device]? = nil</mark>
+    private var isScanning = false
+<span class="elide">⋯  views and viewDidLoad</span>
+    private func scan() {
+        let query = filterField.text ?? ""
+        isScanning = true
+<mark>        devices = nil</mark>
+        render()
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+<mark>            devices = SampleDevices.shared.matching(filter: query)</mark>
+            isScanning = false
+            render()
+        }
+    }</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>State is two properties</strong>, <code>devices</code> and <code>isScanning</code>. The widgets are a copy, and only <code>render()</code> writes to them: the declarative discipline by hand, as in m01. (The filter text lives in the <code>UITextField</code> itself, and <code>scan()</code> reads it once.) <code>devices</code> replaces m01's <code>foundCount</code>, and <code>nil</code> still means "never scanned".</li>
+    <li><strong><code>scan()</code></strong> changes state and renders synchronously, then starts a <code>Task</code>. <code>UIViewController</code> is <code>@MainActor</code>, so the task's code runs on the main thread after <code>await</code> too (section 3).</li>
+    <li><strong><code>render()</code></strong> sets <em>every</em> widget from state, every time. The table's contents are set the same way, from a snapshot (section 2).</li>
+  </ol>
+  <p data-both-only="ios" class="callout ts"><span class="label">UIKit vs SwiftUI · what changed and why</span>SwiftUI's <code>@State</code> plus a body that reads it replaces UIKit's properties, <code>render()</code>, and all the view setup in <code>viewDidLoad</code>. The scan function is nearly identical on both. One real difference: in SwiftUI the filter is state (bound to the field), while in UIKit the text field owns it and you read it when you need it.</p>
+  </div>
+  </div>
+
+  <h2>2. Lists need stable keys</h2>
+  <p>A list widget reuses row views and animates insertions, moves and removals. To do that, it must know which row is which <em>across updates</em>, and position isn't enough. By default Compose keys each item "against the position of the item", so "items which change position effectively lose any remembered state". Giving each item "a stable and unique key" fixes it (<a href="https://developer.android.com/develop/ui/compose/lists">Lists and grids</a>). Every track uses the device's <code>id</code>.</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 236" role="img" aria-labelledby="l07-keys-title">
+      <title id="l07-keys-title">Why a list needs a stable key. Two panels show three rows before and after a Reverse button. In each, the row for the OBD-II Adapter carries a star, a piece of state remembered by that row. In the left panel the key is the device id: after Reverse, the OBD-II Adapter is the last row and its star moved with it. In the right panel the key is the row's position: after Reverse, the star stayed at position 1, so it now sits on the Tire Pressure Sensor, the wrong device.</title>
+      <defs><marker id="l07-keys-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="box" x="4" y="10" width="312" height="216" rx="8"/>
+      <text x="18" y="34" font-weight="600">Key = the device id</text>
+      <text class="small muted" x="18" y="56">before</text>
+      <text class="small muted" x="182" y="56">after Reverse</text>
+      <rect class="box" x="12" y="64" width="142" height="30" rx="5"/><text class="small" x="22" y="83">★ OBD-II Adapter</text>
+      <rect class="box" x="166" y="64" width="142" height="30" rx="5"/><text class="small" x="176" y="83">Tire Pressure Sensor</text>
+      <rect class="box" x="12" y="100" width="142" height="30" rx="5"/><text class="small" x="22" y="119">Heart Rate Monitor</text>
+      <rect class="box" x="166" y="100" width="142" height="30" rx="5"/><text class="small" x="176" y="119">Heart Rate Monitor</text>
+      <rect class="box" x="12" y="136" width="142" height="30" rx="5"/><text class="small" x="22" y="155">Tire Pressure Sensor</text>
+      <rect class="box" x="166" y="136" width="142" height="30" rx="5"/><text class="small" x="176" y="155">★ OBD-II Adapter</text>
+      <path class="edge" d="M156,115 L164,115" marker-end="url(#l07-keys-arrow)"/>
+      <text class="small" x="18" y="192">The star followed the device.</text>
+      <text class="small muted" x="18" y="210">The list matched rows by id.</text>
+      <rect class="box" x="324" y="10" width="312" height="216" rx="8"/>
+      <text x="338" y="34" font-weight="600">Key = the position</text>
+      <text class="small muted" x="338" y="56">before</text>
+      <text class="small muted" x="502" y="56">after Reverse</text>
+      <rect class="box" x="332" y="64" width="142" height="30" rx="5"/><text class="small" x="342" y="83">★ OBD-II Adapter</text>
+      <rect class="box" x="486" y="64" width="142" height="30" rx="5"/><text class="small" x="496" y="83">★ Tire Pressure Sensor</text>
+      <rect class="box" x="332" y="100" width="142" height="30" rx="5"/><text class="small" x="342" y="119">Heart Rate Monitor</text>
+      <rect class="box" x="486" y="100" width="142" height="30" rx="5"/><text class="small" x="496" y="119">Heart Rate Monitor</text>
+      <rect class="box" x="332" y="136" width="142" height="30" rx="5"/><text class="small" x="342" y="155">Tire Pressure Sensor</text>
+      <rect class="box" x="486" y="136" width="142" height="30" rx="5"/><text class="small" x="496" y="155">OBD-II Adapter</text>
+      <path class="edge" d="M476,115 L484,115" marker-end="url(#l07-keys-arrow)"/>
+      <text class="small" x="338" y="192">The star stayed at position 1.</text>
+      <text class="small muted" x="338" y="210">It is on the wrong device now.</text>
+    </svg>
+    <figcaption>A row's remembered state belongs to its key. With the id as key it follows the device. With the position as key it stays behind.</figcaption>
+  </figure>
+  <p class="callout ts"><span class="label">From TypeScript</span>This is React's <code>key</code> prop on list items, or Angular's <code>track item.id</code> in an <code>@for</code> block. React warns you when you skip it. Compose, if you skip it, silently falls back to the position, and the bug shows up only when items change position: an insert, a removal (a new filter) or a reorder.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Track</th><th>Where the key goes</th></tr>
+    <tr><td>Compose</td><td><code>items(devices, key = { it.id })</code> in the <code>LazyColumn</code></td></tr>
+    <tr><td>XML</td><td><code>DiffUtil.ItemCallback.areItemsTheSame</code> compares ids; <code>areContentsTheSame</code> compares all fields</td></tr>
+    <tr><td>SwiftUI</td><td><code>List(devices, id: \.id)</code>; a type conforming to <code>Identifiable</code> doesn't need <code>id:</code> (<a href="https://developer.apple.com/documentation/swiftui/list">Apple: List</a>)</td></tr>
+    <tr><td>UIKit</td><td>the diffable data source's <em>item identifiers</em> are the ids</td></tr>
+  </table>
+  </div>
+  <p>Never use an array index as a key. Indexes change on every insert, filter or sort. Compose adds one constraint: the key must be a type a <code>Bundle</code> can hold, because <code>rememberSaveable</code> inside rows is restored by key. A <code>String</code> id qualifies.</p>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListScreen.kt</figcaption>
+<pre><code><span class="elide">⋯  DeviceListContent's header, the field, the button and the status</span>
+<mark>        LazyColumn(modifier = Modifier.weight(1f)) {</mark>
+<mark>            items(devices.orEmpty(), key = { it.id }) { device -&gt;</mark>
+                DeviceRow(device = device, onClick = { onDeviceClick(device) })
+                HorizontalDivider()
+            }
+        }
+<span class="elide">⋯  ScanStatus</span>
+@Composable
+private fun DeviceRow(device: Device, onClick: () -&gt; Unit) {
+<mark>    ListItem(</mark>
+        headlineContent = { Text(device.name) },
+        supportingContent = { Text(device.id) },
+        trailingContent = { Text("${device.rssi} dBm") },
+<mark>        modifier = Modifier.clickable(onClick = onClick),</mark>
+    )
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>LazyColumn</code></strong> composes only the rows on screen. <code>Modifier.weight(1f)</code> gives it all the height left in the <code>Column</code> after the title, field, button and status.</li>
+    <li><strong><code>items(list, key = { it.id })</code></strong> is the key. <code>devices.orEmpty()</code> turns the <code>null</code> of "never scanned" into an empty list, so the list shows nothing and the status line explains why.</li>
+    <li><strong><code>ListItem</code></strong> is Material 3's row with headline, supporting and trailing slots, and <code>Modifier.clickable</code> turns the whole row into a tap target.</li>
+  </ol>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceAdapter.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+class DeviceAdapter(
+    private val onClick: (Device) -&gt; Unit,
+<mark>) : ListAdapter&lt;Device, DeviceAdapter.Holder&gt;(DeviceDiff) {</mark>
+<span class="elide">⋯  Holder and onCreateViewHolder</span>
+<mark>    override fun onBindViewHolder(holder: Holder, position: Int) {</mark>
+        val device = getItem(position)
+        holder.binding.deviceName.text = device.name
+        holder.binding.deviceId.text = device.id
+        holder.binding.deviceRssi.text = "${device.rssi} dBm"
+        holder.itemView.setOnClickListener { onClick(device) }
+    }
+}
+
+private object DeviceDiff : DiffUtil.ItemCallback&lt;Device&gt;() {
+<mark>    override fun areItemsTheSame(oldItem: Device, newItem: Device) = oldItem.id == newItem.id</mark>
+<mark>    override fun areContentsTheSame(oldItem: Device, newItem: Device) = oldItem == newItem</mark>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/res/layout/fragment_device_list.xml</figcaption>
+<pre><code><span class="elide">⋯  the other views</span>
+    &lt;androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/deviceList"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+<mark>        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"</mark>
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/statusText"
+        app:layout_constraintBottom_toBottomOf="parent" /&gt;</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>ListAdapter</code></strong> is RecyclerView's diffing adapter. You call <code>submitList(newList)</code> (in <code>render()</code>), it diffs against the old list on a background thread, and dispatches precise insert/move/remove updates. You never call <code>notifyDataSetChanged()</code>.</li>
+    <li><strong><code>DeviceDiff</code></strong> answers two questions: same item (same id)? Same contents (data-class equality)? The first is the key. The second decides whether a row needs re-binding.</li>
+    <li><strong>ViewHolder</strong> holds one row's binding. <code>onCreateViewHolder</code> inflates a row (rarely: rows are recycled). <code>onBindViewHolder</code> fills a recycled row with the device at that position, every time a row scrolls into view.</li>
+    <li><strong>The layout manager</strong> is set in the layout XML (<code>app:layoutManager</code>). A RecyclerView without one shows nothing. The row dividers come from the <code>DividerItemDecoration</code> added in <code>onCreateView</code>; RecyclerView draws none by default.</li>
+    <li><strong><code>adapter = null</code> in <code>onDestroyView</code></strong> (in the full file). The adapter is a Fragment field. When a RecyclerView is given an adapter, it registers itself as the adapter's observer. Without this line, the Fragment on the back stack would keep the destroyed list alive through the adapter.</li>
+  </ol>
+  </div>
+  </div>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListView.swift</figcaption>
+<pre><code><span class="elide">⋯  the field, the button and the status</span>
+<mark>            List(devices ?? [], id: \.id) { device in</mark>
+                NavigationLink(value: DeviceRoute(id: device.id)) {
+                    DeviceRow(device: device)
+                }
+            }
+            .listStyle(.plain)
+<span class="elide">⋯  the rest of body and scan()</span>
+private struct DeviceRow: View {
+    let device: Device
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(device.name)
+                Text(device.id)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("\(device.rssi) dBm")
+                .font(.caption)
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>List(devices ?? [], id: \.id)</code></strong> is the key. <code>\.id</code> is a key path to each device's <code>id</code>. <code>Device</code> comes from Kotlin and doesn't conform to <code>Identifiable</code>, so the key path is passed explicitly.</li>
+    <li><strong><code>devices ?? []</code></strong> turns the <code>nil</code> of "never scanned" into an empty list.</li>
+    <li>Each row is a <code>NavigationLink</code> (section 4), which adds the disclosure chevron. <code>DeviceRow</code> is a plain view: an <code>HStack</code> with a two-line <code>VStack</code>, a <code>Spacer</code> and the signal.</li>
+  </ol>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  state and views</span>
+<mark>    private lazy var dataSource = UITableViewDiffableDataSource&lt;Int, String&gt;(tableView: tableView) {</mark>
+        tableView, indexPath, deviceId in
+        let cell = tableView.dequeueReusableCell(withIdentifier: "device", for: indexPath)
+<mark>        var content = UIListContentConfiguration.subtitleCell()</mark>
+        if let device = SampleDevices.shared.find(id: deviceId) {
+            content.text = device.name
+            content.secondaryText = "\(device.id)   \(device.rssi) dBm"
+        }
+        cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+<span class="elide">⋯  viewDidLoad, scan() and the status part of render()</span>
+<mark>        var snapshot = NSDiffableDataSourceSnapshot&lt;Int, String&gt;()</mark>
+        snapshot.appendSections([0])
+<mark>        snapshot.appendItems((devices ?? []).map(\.id))</mark>
+<mark>        dataSource.apply(snapshot, animatingDifferences: true)</mark></code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>UITableViewDiffableDataSource&lt;Int, String&gt;</code></strong>: section identifiers are <code>Int</code>s (one section, <code>0</code>), and item identifiers are device id <code>String</code>s, so the key <em>is</em> the item. The closure builds a cell for an id (<a href="https://developer.apple.com/documentation/uikit/uitableviewdiffabledatasource">Apple: UITableViewDiffableDataSource</a>).</li>
+    <li><strong>In <code>render()</code></strong>, you build a fresh <code>NSDiffableDataSourceSnapshot</code> from state and <code>apply</code> it. UIKit diffs the snapshots and animates the changes. That's the declarative idea inside an imperative toolkit.</li>
+    <li><code>UIListContentConfiguration.subtitleCell()</code> is the standard two-line cell. <code>dequeueReusableCell</code> recycles cells, like RecyclerView's ViewHolders.</li>
+    <li><strong><code>lazy var</code></strong>: the data source needs <code>tableView</code>, so it's created on first use, after the properties exist.</li>
+  </ol>
+  </div>
+  </div>
+
+  <h2>3. Async updates and the main-thread rule</h2>
+  <p>Every UI toolkit here is single-threaded. Android's two rules are "Don't block the UI thread" and "Don't access the Android UI toolkit from outside the UI thread", because "the Android UI toolkit is <em>not</em> thread-safe" (<a href="https://developer.android.com/guide/components/processes-and-threads">Processes and threads</a>). On iOS, <code>UIViewController</code> and SwiftUI's <code>View</code> are <code>@MainActor</code>, and the Swift 6 compiler checks it (Lesson 02). The scan you wrote in section 1 follows both rules: <code>delay</code> and <code>Task.sleep</code> <em>suspend</em> without blocking a thread, and the state updates after them run on the main thread.</p>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 262" role="img" aria-labelledby="l07-async-title">
+      <title id="l07-async-title">A scan over time, on three lanes. On the main thread, the tap handler sets isScanning to true, clears the results and renders. The scan coroutine then waits in delay for 1.5 seconds: it is suspended and holds no thread, so the main thread is free to draw frames and take taps. When the delay ends, the coroutine resumes on the main thread, sets the results and isScanning to false, and renders. A third lane, a background thread, is where slow work would run and where some radio callbacks arrive. Its result must be handed back to the main thread before it touches UI state.</title>
+      <defs><marker id="l07-async-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text x="14" y="58" font-weight="600">Main thread</text>
+      <text x="14" y="130" font-weight="600">Scan coroutine</text>
+      <text x="14" y="202" font-weight="600">Background thread</text>
+      <rect class="box" x="140" y="34" width="110" height="38" rx="5"/>
+      <text class="small" x="150" y="51">tap handler</text><text class="small muted" x="150" y="65">state, then render</text>
+      <rect class="box" x="250" y="34" width="210" height="38" rx="5"/>
+      <text class="small" x="262" y="51">free: draws frames, takes taps</text><text class="small muted" x="262" y="65">nothing is blocked</text>
+      <rect class="box" x="460" y="34" width="110" height="38" rx="5"/>
+      <text class="small" x="470" y="51">result handler</text><text class="small muted" x="470" y="65">state, then render</text>
+      <rect class="box" x="250" y="106" width="210" height="38" rx="5"/>
+      <text class="mono small" x="262" y="123">delay(1_500)</text><text class="small muted" x="262" y="137">suspended: holds no thread</text>
+      <path class="edge" d="M240,72 L240,104 L248,104" marker-end="url(#l07-async-arrow)"/>
+      <text class="small muted" x="148" y="100">launch</text>
+      <path class="edge" d="M462,106 L462,74" marker-end="url(#l07-async-arrow)"/>
+      <text class="small muted" x="454" y="100" text-anchor="end">resumes on main</text>
+      <rect class="box" x="250" y="178" width="210" height="38" rx="5" stroke-dasharray="5 4"/>
+      <text class="small" x="262" y="195">work off the main thread</text><text class="small muted" x="262" y="209">(slow work, BLE radio callbacks)</text>
+      <path class="edge dashed" d="M462,178 L520,178 L520,74" marker-end="url(#l07-async-arrow)"/>
+      <text class="small muted" x="530" y="140">hand the result</text><text class="small muted" x="530" y="154">back to main</text>
+      <line class="axis" x1="140" y1="238" x2="590" y2="238"/>
+      <text class="small muted" x="140" y="254">time →</text>
+      <text class="small" x="300" y="254">Slow work off the main thread, UI state published on it.</text>
+    </svg>
+    <figcaption>While the coroutine waits, nothing holds the main thread. The two state changes (start and finish) both run on it.</figcaption>
+  </figure>
+  <p>To see what each toolkit does when you break the second rule, we moved the post-scan update onto a background thread on each track:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Track</th><th>What we changed</th><th>What happened</th></tr>
+    <tr><td>Compose</td><td><code>withContext(Dispatchers.Default) { foundIds = … }</code></td><td>No crash. The list updated (the write ran on <code>DefaultDispatcher-worker-1</code>). Compose state tolerates it, but don't build on that: Lesson 08's shared ViewModel publishes UI state on the main thread.</td></tr>
+    <tr><td>XML</td><td><code>withContext(Dispatchers.Default) { render() }</code></td><td><strong>Crash:</strong> <code>CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views. Expected: main Calling: DefaultDispatcher-worker-1</code></td></tr>
+    <tr><td>SwiftUI</td><td><code>Task.detached { devices = … }</code></td><td>Compiler <strong>warning</strong> (Swift 6 mode): <code>main actor-isolated property 'devices' can not be mutated from a nonisolated context</code>. It's only a warning because the view gets its main-actor isolation from <code>View</code>, which SwiftUI declares <code>@preconcurrency</code>: a home-made property wrapper in the same place gets the same warning, and in a struct marked <code>@MainActor</code> directly the same write is an error. This course treats warnings as errors.</td></tr>
+    <tr><td>UIKit</td><td><code>Task.detached { self.render() }</code></td><td>Compiler <strong>error</strong>: <code>main actor-isolated instance method 'render()' cannot be called from outside of the actor</code></td></tr>
+  </table>
+  </div>
+  <p>The rule to carry forward: <strong>do slow work off the main thread, and publish UI state on it.</strong> In the BLE lessons, radio callbacks can arrive on threads other than the main one, and they must be back on the main thread before the UI sees them. From Lesson 08 that's the shared ViewModel's job: it publishes UI state on the main thread, whatever thread the data came from.</p>
+  <p class="callout ts"><span class="label">From TypeScript</span>The browser has one UI thread too, and <code>await</code> doesn't block it, exactly like <code>delay</code> and <code>Task.sleep</code> here. What differs is how easy it is to leave that thread. A web page's JavaScript has no other thread that can touch the page (a Worker can't reach the DOM), while on Android and iOS another thread is one call away (<code>Dispatchers.Default</code>, <code>Task.detached</code>) and can reach UI objects. That is why these platforms have a written rule, and why Swift 6 enforces it in the compiler.</p>
+
+  <h2>4. A second screen: navigation as a back stack</h2>
+  <p>Every navigation system here is a <strong>back stack</strong>: the root screen at the bottom, pushed screens on top, Back pops one. Two ideas carry across tracks:</p>
+  <ul>
+    <li><strong>A route is a value.</strong> You navigate by pushing a small value that describes the destination (<code>DeviceDetail(id)</code>, <code>DeviceRoute(id:)</code>, a <code>Bundle</code> with <code>deviceId</code>), and the system maps it to a screen.</li>
+    <li><strong>Pass the id, not the object.</strong> Android must be able to save the route (process death, rotation), so routes hold small saveable values. The detail screen then looks the device up from the single source of truth (<code>SampleDevices.find</code>). The detail screen's only state is <code>deviceId</code>, and everything it displays is derived from it.</li>
+  </ul>
+  <figure class="diagram">
+    <svg class="dg" viewBox="0 0 640 172" role="img" aria-labelledby="l07-nav-title">
+      <title id="l07-nav-title">The back stack in three steps. At launch the stack holds one screen, the device list. Tapping a row pushes a detail route that carries the device id, so the stack holds the list with the detail screen on top. Pressing Back pops the detail screen, and the stack holds only the list again, with the user's filter and results still there. The route value differs by track: a DeviceDetail data class in Compose, a Bundle with deviceId in XML, a DeviceRoute struct in SwiftUI, and the initializer's parameter in UIKit.</title>
+      <defs><marker id="l07-nav-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="small muted" x="30" y="20">1 · launch</text>
+      <text class="small muted" x="245" y="20">2 · tap a row: push</text>
+      <text class="small muted" x="470" y="20">3 · Back: pop</text>
+      <rect class="box" x="30" y="76" width="150" height="38" rx="5"/><text class="small" x="42" y="99">DeviceList</text>
+      <rect class="box" x="245" y="76" width="150" height="38" rx="5"/><text class="small" x="257" y="99">DeviceList</text>
+      <rect class="box" x="245" y="32" width="150" height="38" rx="5"/><text class="mono small" x="257" y="48">DeviceDetail(id)</text><text class="small muted" x="257" y="63">top of the stack</text>
+      <rect class="box" x="470" y="76" width="150" height="38" rx="5"/><text class="small" x="482" y="99">DeviceList</text>
+      <path class="edge" d="M182,95 L243,95" marker-end="url(#l07-nav-arrow)"/>
+      <path class="edge" d="M397,95 L468,95" marker-end="url(#l07-nav-arrow)"/>
+      <text class="small muted" x="190" y="88">push</text>
+      <text class="small muted" x="418" y="88">pop</text>
+      <text class="small muted" x="30" y="136">bottom of the stack: the root screen</text>
+      <text class="small muted" x="470" y="136">filter and results still there</text>
+      <text class="small" x="30" y="160">The route value: Compose DeviceDetail(id) · XML Bundle("deviceId") · SwiftUI DeviceRoute(id:) · UIKit init(deviceId:)</text>
+    </svg>
+    <figcaption>Push a small value that names the destination, pop to come back. The screen underneath is still there.</figcaption>
+  </figure>
+  <p class="callout ts"><span class="label">From TypeScript</span>The back stack is the browser's history stack, and a route is a URL with parameters, like <code>/devices/:id</code>. The detail screen reads <code>:id</code> and looks the device up, as a web page would.</p>
+  <div class="tracks">
+  <div data-track="compose">
+  <figure class="excerpt">
+    <figcaption class="path">build.gradle.kts</figcaption>
+<pre><code><span class="elide">⋯  plugins { and the four plugins from m00</span>
+<mark>    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.21" apply false</mark>
+}</code></pre>
+  </figure>
+  <figure class="excerpt">
+    <figcaption class="path">androidApp/build.gradle.kts</figcaption>
+<pre><code>plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
+<mark>    id("org.jetbrains.kotlin.plugin.serialization")</mark>
+}
+<span class="elide">⋯  android { }</span>
+dependencies {
+<span class="elide">⋯  project(":shared"), compose-bom, core-ktx, activity-compose, material3</span>
+<mark>    implementation("androidx.navigation:navigation-compose:2.10.2")</mark>
+<mark>    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")</mark>
+<mark>    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.12.0")</mark>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorApp.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+@Serializable
+<mark>data object DeviceList</mark>
+
+@Serializable
+<mark>data class DeviceDetail(val id: String)</mark></code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorApp.kt</figcaption>
+<pre><code><span class="elide">⋯  routes</span>
+@Composable
+fun DeviceMonitorApp() {
+<mark>    val navController = rememberNavController()</mark>
+<mark>    Scaffold { innerPadding -&gt;</mark>
+        NavHost(
+<mark>            navController = navController,</mark>
+<mark>            startDestination = DeviceList,</mark>
+<mark>            modifier = Modifier.padding(innerPadding),</mark>
+        ) {
+<mark>            composable&lt;DeviceList&gt; {</mark>
+                DeviceListScreen(
+<mark>                    onDeviceClick = { device -&gt; navController.navigate(DeviceDetail(device.id)) },</mark>
+                )
+            }
+<mark>            composable&lt;DeviceDetail&gt; { entry -&gt;</mark>
+<mark>                val route: DeviceDetail = entry.toRoute()</mark>
+                DeviceDetailScreen(
+                    deviceId = route.id,
+<mark>                    onBack = { navController.popBackStack() },</mark>
+                )
+            }
+        }
+    }
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceDetailScreen.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+@Composable
+<mark>fun DeviceDetailScreen(deviceId: String, onBack: () -&gt; Unit) {</mark>
+<mark>    val device = SampleDevices.find(deviceId)</mark>
+    Column(
+<span class="elide">⋯  modifier and arrangement</span>
+    ) {
+<span class="elide">⋯  the Bluetooth icon</span>
+<mark>        if (device == null) {</mark>
+<mark>            Text("Unknown device", color = MaterialTheme.colorScheme.error)</mark>
+        } else {
+            Text(device.name, style = MaterialTheme.typography.headlineSmall)
+            Text("ID: ${device.id}")
+            Text("Signal: ${device.rssi} dBm")
+        }
+<mark>        TextButton(onClick = dropUnlessResumed { onBack() }) {</mark>
+            Text("Back")
+        }
+    }
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</figcaption>
+<pre><code><span class="elide">⋯  package and the other imports</span>
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+<mark>                DeviceMonitorApp()</mark>
+            }
+        }
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>Routes are <code>@Serializable</code> types</strong>: an object for a screen without arguments, a data class for one with arguments. That needs the Kotlin serialization plugin (same version as Kotlin) and <code>kotlinx-serialization-core</code> (<a href="https://developer.android.com/guide/navigation#set-up">Navigation setup</a>, <a href="https://developer.android.com/guide/navigation/design/type-safety">type safety</a>). We declare the serialization library ourselves because our code uses <code>@Serializable</code> directly.</li>
+    <li><strong><code>NavHost(navController, startDestination = DeviceList)</code></strong> is the back stack's container. <code>composable&lt;DeviceDetail&gt; { entry -&gt; … }</code> maps a route type to a screen, and <code>entry.toRoute()</code> gives back the typed route with its <code>id</code>.</li>
+    <li><strong><code>navController.navigate(DeviceDetail(device.id))</code></strong> pushes. The list screen doesn't know about the NavController: it only reports <code>onDeviceClick</code> (events up). The app composable decides what a click means.</li>
+    <li><strong><code>Scaffold</code></strong> supplies <code>innerPadding</code> for the system bars, and <code>Modifier.padding(innerPadding)</code> keeps both screens out from under them. m01's screen did this itself with <code>safeDrawingPadding()</code>.</li>
+    <li><strong><code>dropUnlessResumed { onBack() }</code></strong> ignores the tap unless the screen is fully resumed. Without it, a fast double tap on Back popped twice and left a <strong>blank screen</strong> (section 6). System Back (gesture or button) is handled by <code>NavHost</code> itself.</li>
+    <li><strong>The detail screen has no state of its own</strong>: it derives everything from <code>deviceId</code>. If the id is unknown, it shows an error instead of crashing. The Bluetooth icon is m01's header icon, now on this screen (the file <code>res/drawable/ic_bluetooth.xml</code> doesn't change).</li>
+  </ol>
+  <div class="callout">
+    <span class="label">Navigation Compose vs Navigation 3</span>
+    Google also ships <strong>Navigation 3</strong> (stable). In Nav3 the back stack is a list you own: you add and remove keys yourself, which is exactly SwiftUI's <code>NavigationStack(path:)</code> model (<a href="https://developer.android.com/guide/navigation/navigation-3">Navigation 3</a>). Google's main navigation guide still says "If your app is built entirely with Jetpack Compose, use Navigation Compose" (<a href="https://developer.android.com/guide/navigation">Navigation</a>), so this course uses Navigation Compose. The concepts (routes as values, ids not objects, one back stack) carry over unchanged.
+  </div>
+  </div>
+  <div data-track="xml">
+  <figure class="excerpt">
+    <figcaption class="path">androidApp/build.gradle.kts</figcaption>
+<pre><code><span class="elide">⋯  plugins, android { }</span>
+dependencies {
+    implementation(project(":shared"))
+<span class="elide">⋯  core-ktx, appcompat, constraintlayout</span>
+<mark>    implementation("androidx.fragment:fragment-ktx:1.9.1")</mark>
+<mark>    implementation("androidx.recyclerview:recyclerview:1.4.0")</mark>
+<mark>    implementation("androidx.navigation:navigation-fragment:2.10.2")</mark>
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/res/layout/activity_main.xml</figcaption>
+<pre><code><span class="elide">⋯  namespaces and sizes</span>
+<mark>    android:fitsSystemWindows="true"&gt;</mark>
+
+    &lt;androidx.fragment.app.FragmentContainerView
+        android:id="@+id/navHost"
+<mark>        android:name="androidx.navigation.fragment.NavHostFragment"</mark>
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+<mark>        app:defaultNavHost="true"</mark>
+<mark>        app:navGraph="@navigation/nav_graph" /&gt;</mark>
+&lt;/FrameLayout&gt;</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/res/navigation/nav_graph.xml</figcaption>
+<pre><code><span class="elide">⋯  namespaces and the graph's id</span>
+    &lt;fragment
+        android:id="@+id/deviceList"
+        android:name="com.example.devicemonitor.android.DeviceListFragment"&gt;
+        &lt;action
+            android:id="@+id/toDetail"
+<mark>            app:destination="@id/deviceDetail" /&gt;</mark>
+    &lt;/fragment&gt;
+
+    &lt;fragment
+        android:id="@+id/deviceDetail"
+        android:name="com.example.devicemonitor.android.DeviceDetailFragment"&gt;
+        &lt;argument
+<mark>            android:name="deviceId"</mark>
+<mark>            app:argType="string" /&gt;</mark>
+    &lt;/fragment&gt;</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceListFragment.kt</figcaption>
+<pre><code><span class="elide">⋯  package, imports, state</span>
+    private var binding: FragmentDeviceListBinding? = null
+    private val adapter = DeviceAdapter { device -&gt;
+        val nav = findNavController()
+        // A fast double tap delivers two clicks; only navigate from the list itself.
+<mark>        if (nav.currentDestination?.id == R.id.deviceList) {</mark>
+<mark>            nav.navigate(R.id.toDetail, Bundle().apply { putString("deviceId", device.id) })</mark>
+        }
+    }</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="android">
+    <figcaption class="path">androidApp/src/main/java/com/example/devicemonitor/android/DeviceDetailFragment.kt</figcaption>
+<pre><code><span class="elide">⋯  package and imports</span>
+class DeviceDetailFragment : Fragment() {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        val b = FragmentDeviceDetailBinding.inflate(inflater, container, false)
+<mark>        val deviceId = requireArguments().getString("deviceId").orEmpty()</mark>
+<mark>        val device = SampleDevices.find(deviceId)</mark>
+        if (device == null) {
+            b.deviceName.text = "Unknown device"
+        } else {
+            b.deviceName.text = device.name
+            b.deviceId.text = "ID: ${device.id}"
+            b.deviceRssi.text = "Signal: ${device.rssi} dBm"
+        }
+        b.backButton.setOnClickListener {
+            val nav = findNavController()
+            // A fast double tap would otherwise pop the list too and empty the back stack.
+<mark>            if (nav.currentDestination?.id == R.id.deviceDetail) nav.popBackStack()</mark>
+        }
+        return b.root
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong>One Activity, many Fragments.</strong> <code>MainActivity</code> now only sets a layout holding a <code>FragmentContainerView</code> whose class is <code>NavHostFragment</code>. The NavHostFragment reads <code>nav_graph.xml</code> and swaps Fragments in and out. <code>defaultNavHost="true"</code> lets it handle the system Back button. m01's <code>MainActivity</code> held the whole screen and its <code>render()</code>; that code now lives in <code>DeviceListFragment</code>.</li>
+    <li><strong>The nav graph</strong> lists destinations (each a Fragment class), the <code>startDestination</code>, an <code>action</code> (<code>toDetail</code>) and the detail's typed <code>argument</code>. If you've seen this file in the team's app: only the start destination appears on launch, and every other screen is reached by <code>navigate()</code>.</li>
+    <li><strong><code>navigate(R.id.toDetail, Bundle().apply { putString("deviceId", device.id) })</code></strong> pushes, passing the id in a <code>Bundle</code>. <code>requireArguments().getString("deviceId")</code> reads it on the other side. The shorter <code>bundleOf("deviceId" to device.id)</code> is deprecated in core-ktx 1.19.1 ("does not provide type safety at compile time") and gives a compiler warning. The Safe Args Gradle plugin generates typed wrappers for arguments; it isn't needed for one.</li>
+    <li><strong>The <code>FrameLayout</code> wrapper with <code>fitsSystemWindows="true"</code></strong> pads everything clear of the system bars. Putting <code>fitsSystemWindows</code> on the <code>FragmentContainerView</code> itself did nothing in our build: the list drew under the status bar (section 6).</li>
+    <li><strong>The detail Fragment has no state of its own</strong>: it reads its argument and fills its views once. A Fragment's argument <code>Bundle</code> is saved and restored for you, so rotation needs no extra code here. (The Bluetooth icon in <code>fragment_device_detail.xml</code> is m01's header icon, tinted through AppCompat's <code>app:tint</code>.)</li>
+    <li><strong>Both Back paths are guarded.</strong> The row click navigates only while the list is the current destination, and Back pops only while the detail is. Without the checks, two fast taps navigated or popped twice (section 6).</li>
+  </ol>
+  <p data-both-only="android" class="callout ts"><span class="label">XML vs Compose · what changed and why</span>Navigation Compose keeps the graph in Kotlin (<code>composable&lt;Route&gt;</code>), with typed routes checked by the compiler. The Fragment version keeps it in XML, with string-keyed <code>Bundle</code> arguments checked at runtime. Both keep a back stack inside one Activity. The Fragment version's extra layer (Fragment lifecycle plus view lifecycle) is why <code>binding</code> is nullable there and why the adapter needs clearing.</p>
+  </div>
+  </div>
+  <div class="tracks">
+  <div data-track="swiftui">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/ContentView.swift</figcaption>
+<pre><code>import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+<mark>        NavigationStack {</mark>
+            DeviceListView()
+<mark>                .navigationDestination(for: DeviceRoute.self) { route in</mark>
+                    DeviceDetailView(deviceId: route.id)
+                }
+        }
+    }
+}
+
+<mark>struct DeviceRoute: Hashable {</mark>
+<mark>    let id: String</mark>
+}</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceDetailView.swift</figcaption>
+<pre><code><span class="elide">⋯  imports</span>
+struct DeviceDetailView: View {
+<mark>    let deviceId: String</mark>
+
+    var body: some View {
+        VStack(spacing: 12) {
+<span class="elide">⋯  the icon</span>
+<mark>            if let device = SampleDevices.shared.find(id: deviceId) {</mark>
+                Text(device.name)
+                    .font(.title2)
+                Text("ID: \(device.id)")
+                Text("Signal: \(device.rssi) dBm")
+            } else {
+                Text("Unknown device")
+                    .foregroundStyle(.red)
+            }
+            Spacer()
+        }
+        .padding()
+<mark>        .navigationTitle("Device")</mark>
+<mark>        .navigationBarTitleDisplayMode(.inline)</mark>
+    }
+}</code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>NavigationStack { root }</code></strong> owns the back stack. <code>NavigationLink(value: DeviceRoute(id: device.id))</code> in the list pushes a value, and <code>.navigationDestination(for: DeviceRoute.self)</code> maps that value type to a screen. Apple's docs describe exactly this pairing (<a href="https://developer.apple.com/documentation/swiftui/navigationstack">Apple: NavigationStack</a>).</li>
+    <li><strong><code>DeviceRoute</code> is a <code>Hashable</code> struct</strong>, the Swift twin of Compose's <code>DeviceDetail(id)</code>. Pushing a bare <code>String</code> would work too. A named type keeps destinations from colliding once a second screen also takes a <code>String</code>.</li>
+    <li><strong><code>.navigationDestination</code> goes inside the stack</strong>, on the root view, not on the <code>NavigationStack</code> itself.</li>
+    <li>For programmatic navigation (deep links, "go back to root"), use <code>NavigationStack(path: $path)</code> with an array you own. "The stack adds items to the collection as it adds views to the stack and removes items when it removes views" (same page). We don't need it yet.</li>
+    <li><strong>The detail view has no state of its own</strong>: <code>deviceId</code> is all it holds, and everything it shows comes from <code>find</code>. <code>Image(systemName:)</code> (in the full file) is the same SF Symbol as m01's header icon.</li>
+    <li>The back button and swipe-back come with the <code>NavigationStack</code>, so no code is needed. <code>.navigationBarTitleDisplayMode(.inline)</code> keeps the detail screen's title small. The list's <code>.navigationTitle("Device Monitor")</code> is the screen's title now, in place of m01's header row. <code>iOSApp.swift</code> shows <code>ContentView()</code> again, as in m00.</li>
+  </ol>
+  </div>
+  <div data-track="uikit">
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/SceneDelegate.swift</figcaption>
+<pre><code><span class="elide">⋯  imports and the scene delegate's window property</span>
+        let window = UIWindow(windowScene: windowScene)
+<mark>        window.rootViewController = UINavigationController(rootViewController: DeviceListViewController())</mark>
+        window.makeKeyAndVisible()</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceListViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  state, views and the data source</span>
+    override func viewDidLoad() {
+        super.viewDidLoad()
+<mark>        title = "Device Monitor"</mark>
+<mark>        navigationController?.navigationBar.prefersLargeTitles = true</mark>
+<span class="elide">⋯  the rest of viewDidLoad, scan() and render()</span>
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+<mark>        guard let deviceId = dataSource.itemIdentifier(for: indexPath) else { return }</mark>
+<mark>        navigationController?.pushViewController(DeviceDetailViewController(deviceId: deviceId), animated: true)</mark>
+    }</code></pre>
+  </figure>
+  <figure class="excerpt" data-part="ios">
+    <figcaption class="path">iosApp/iosApp/DeviceDetailViewController.swift</figcaption>
+<pre><code><span class="elide">⋯  imports</span>
+final class DeviceDetailViewController: UIViewController {
+<mark>    private let deviceId: String</mark>
+
+<mark>    init(deviceId: String) {</mark>
+        self.deviceId = deviceId
+        super.init(nibName: nil, bundle: nil)
+    }
+
+<mark>    required init?(coder: NSCoder) { fatalError("not used") }</mark>
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Device"
+<mark>        navigationItem.largeTitleDisplayMode = .never</mark>
+<span class="elide">⋯  the labels</span>
+<mark>        if let device = SampleDevices.shared.find(id: deviceId) {</mark>
+            nameLabel.text = device.name
+            idLabel.text = "ID: \(device.id)"
+            rssiLabel.text = "Signal: \(device.rssi) dBm"
+<span class="elide">⋯  the unknown-device branch and the stack</span></code></pre>
+  </figure>
+  <ol class="walk">
+    <li><strong><code>UINavigationController(rootViewController:)</code></strong> is the back stack. It provides the navigation bar, the back button and swipe-back. The scene's root is now the navigation controller, not the screen itself as in m01.</li>
+    <li><strong><code>pushViewController(_:animated:)</code></strong> (in the list's <code>didSelectRowAt</code>) pushes a new <code>DeviceDetailViewController(deviceId:)</code>. In UIKit, the "route" is the initializer's parameter list.</li>
+    <li><strong><code>required init?(coder:)</code></strong> is needed because we add our own initializer. It would only be called when loading from a storyboard, which this app doesn't use.</li>
+    <li><strong><code>dataSource.itemIdentifier(for: indexPath)</code></strong> turns a tapped row back into its id. The id travels, not the <code>Device</code>.</li>
+    <li><strong>The title and the large title</strong> come from the navigation controller: <code>title</code> plus <code>prefersLargeTitles</code> on the list, and <code>largeTitleDisplayMode = .never</code> on the detail. They replace m01's header row.</li>
+    <li><code>AppDelegate.swift</code> and <code>project.yml</code> stay as in m00. The detail screen builds the same SF Symbol icon as m01's header (see the full file).</li>
+  </ol>
+  </div>
+  </div>
+  <p data-both-only="ios" class="callout ts"><span class="label">UIKit vs SwiftUI · what changed and why</span>In UIKit you push view controller <em>instances</em>, so the call site decides which screen opens. In SwiftUI you push <em>values</em>, and the stack decides which screen a value means. That's why SwiftUI can restore or rewrite the whole stack from an array, and UIKit can't without extra code.</p>
+
+  <h2>5. What survives what</h2>
+  <p>"Local state" means state owned by the screen, so it dies when the screen does. Now that there are two screens, there's a new case: leaving the list and coming back. We ran the m02 builds and checked it, next to the rotation cases from Lesson 06:</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>After…</th><th>Compose</th><th>XML</th><th>SwiftUI / UIKit</th></tr>
+    <tr><td>opening a device and coming back</td><td>filter + results kept (<code>rememberSaveable</code>). With plain <code>remember</code>, the results <strong>were lost</strong>: the list screen leaves composition while the detail is shown.</td><td>kept: the Fragment stays on the back stack, and only its views are rebuilt</td><td>kept: the list stays alive underneath the pushed screen</td></tr>
+    <tr><td>rotating, results on screen</td><td>kept (saved state)</td><td>kept (saved state)</td><td>kept: iOS doesn't recreate screens on rotation</td></tr>
+    <tr><td>rotating <em>during</em> a scan</td><td colspan="2">the scan is <strong>silently cancelled</strong> and the screen returns to "Tap Scan to look for devices."</td><td>the scan completes</td></tr>
+  </table>
+  </div>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · Compose: <code>remember</code> forgets when you navigate away</span>
+    Swap <code>rememberSaveable</code> for <code>remember</code> on the results, open a device, come back: the results are gone. We reproduced this. NavHost removes the list screen from composition while the detail is shown, and only <em>saved</em> state is restored. SwiftUI's root view, by contrast, stays alive under the pushed screen.
+  </div>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · SwiftUI: <code>.task</code> and <code>onAppear</code> run again when you come back</span>
+    We logged a <code>.task</code> on the list view. It ran at launch and <strong>again</strong> after popping back from the detail screen, while the <code>@State</code> was untouched. Don't start a scan in <code>.task</code> or <code>onAppear</code> unless you want it on every return. This is the view lifecycle from Lesson 04 at work.
+  </div>
+
+  <h2>6. What actually happens</h2>
+  <p>We built m02 with the brief below (Kotlin 2.4.21, AGP 9.4.1, Compose BOM 2026.09.00, Navigation 2.10.2, Xcode 26.2) and ran it on the Android 16 emulator and the iOS 26.2 simulator. Tap Scan: the button greys out and "Scanning…" shows with a spinner for 1.5 s. Then "Devices found: 5" and five rows, strongest signal first. A filter of <code>sens</code> finds one device, and <code>zzz</code> shows the red error. Tapping a row opens the detail screen, and Back returns to the list with the results still there.</p>
+  <div class="shots">
+    <figure><img src="../assets/l07/android-list.png" alt="Android app showing Devices found: 5 and five device rows"><figcaption>Compose · after Scan</figcaption></figure>
+    <figure><img src="../assets/l07/android-detail.png" alt="Android detail screen for Thermometer with a Bluetooth icon"><figcaption>Compose · detail</figcaption></figure>
+    <figure><img src="../assets/l07/ios-list.png" alt="iOS app showing Devices found: 5 and five device rows"><figcaption>SwiftUI · after Scan</figcaption></figure>
+    <figure><img src="../assets/l07/ios-error.png" alt="iOS app with filter zzz showing a red No devices found message"><figcaption>SwiftUI · filter "zzz"</figcaption></figure>
+  </div>
+  <p><strong>m02 is a natural stop.</strong> It's done when both apps build and the shell behaves as above. Commit it before the next lesson, which starts from this state.</p>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · Android: a fast double tap navigates twice</span>
+    <ul>
+      <li><strong>Compose:</strong> with <code>onClick = { navController.popBackStack() }</code>, two fast taps on our Back button popped the detail screen <em>and then the list</em>, leaving an empty <code>NavHost</code> and a blank app. <code>dropUnlessResumed { … }</code> (from <code>lifecycle-runtime-compose</code>) fixed it. Inside a <code>NavHost</code> destination, the lifecycle it checks is the detail screen's back-stack entry, which stops being resumed as soon as the first tap pops it, so the second tap is dropped.</li>
+      <li><strong>Fragments, worse because it's hidden:</strong> two truly simultaneous taps on an unguarded Back left the list <em>on screen</em> but popped its back-stack entry too. The <em>next</em> row tap crashed with <code>IllegalArgumentException: Navigation action/destination …:id/toDetail cannot be found from the current destination</code>. An unguarded double tap on a row crashed immediately, the same way. Checking <code>currentDestination?.id</code> before <code>navigate</code>/<code>popBackStack</code> fixed both. Tapping slowly by hand, or through one adb session, never showed the problem. It took two parallel adb sessions.</li>
+    </ul>
+  </div>
+  <div class="callout gotcha">
+    <span class="label">Gotcha · XML: <code>fitsSystemWindows</code> on the wrong view</span>
+    <code>android:fitsSystemWindows="true"</code> on the <code>FragmentContainerView</code> was ignored, and the title drew under the status bar. Wrapping it in a <code>FrameLayout</code> that has the attribute fixed it.
+  </div>
+
+  <div class="callout ask-agent">
+    <span class="label">Ask your agent</span>
+    Ask your agent to explain what happens, step by step, between your tap on a row and the detail screen showing that device on your track. Have it name the route value, who creates the screen, and where the screen gets the device from. Then ask: "What would change if the detail screen received a <code>Device</code> object instead of an id?"
+  </div>
+
+  <h2 id="retrieval-checks">Retrieval checks</h2>
+  <p>Answer from memory, without scrolling up.</p>
+  <div class="quiz mcq">
+    <p class="q">What should a device list use as each row's key?</p>
+    <div class="opts">
+      <button class="opt">the row's position in the list</button>
+      <button class="opt" data-correct>the device's stable unique id</button>
+      <button class="opt">the device's display name text</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Positions change on every filter or sort, and two devices can share a name. The id follows the device.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">XML track: <code>render()</code> runs inside <code>withContext(Dispatchers.Default)</code>. What happens?</p>
+    <div class="opts">
+      <button class="opt" data-correct>the app crashes when a view is touched</button>
+      <button class="opt">the views update a little more slowly</button>
+      <button class="opt">the compiler rejects it before it runs</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why"><code>CalledFromWrongThreadException</code> at runtime. The Kotlin compiler doesn't know about Android's thread rule. Swift's compiler does know about <code>@MainActor</code>.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Why does the detail route carry only the device id?</p>
+    <div class="opts">
+      <button class="opt">ids are faster to compare than objects</button>
+      <button class="opt" data-correct>routes must be small and saveable values</button>
+      <button class="opt">Swift cannot receive Kotlin data classes</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The back stack is saved and restored, so routes hold saveable values. The screen then derives the rest from the single source of truth.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Compose: you open a device and press Back. Which keeps the scan results on the list screen?</p>
+    <div class="opts">
+      <button class="opt">plain <code>remember</code></button>
+      <button class="opt" data-correct><code>rememberSaveable</code></button>
+      <button class="opt">a larger <code>delay</code></button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">NavHost removes the list screen from composition while the detail is on top. Plain <code>remember</code> is dropped with it, and only saved state is restored.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">SwiftUI: the list view has <code>.task { scan() }</code>. When does a scan start?</p>
+    <div class="opts">
+      <button class="opt">only once, at launch</button>
+      <button class="opt" data-correct>at launch, and again each time you come back from the detail screen</button>
+      <button class="opt">only when the Scan button is tapped</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">The view's <code>.task</code> runs each time the view appears, and the list appears again when the detail is popped. Start a scan from the button's action instead.</p>
+  </div>
+
+  <h3>Mixed review (interleaved)</h3>
+  <div class="quiz mcq">
+    <p class="q">XML or UIKit: a click handler sets <code>statusText</code> directly and never calls <code>render()</code>. What goes wrong? (Lesson 06)</p>
+    <div class="opts">
+      <button class="opt">the compiler rejects the handler</button>
+      <button class="opt" data-correct>the status text can disagree with the other widgets and the state</button>
+      <button class="opt">the views are not drawn at all</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Only <code>render()</code> makes every widget match the state. A direct edit is how the imperative phone in Lesson 06's toy got stuck.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Swift calls <code>SampleDevices.shared.find(id:)</code>. What is <code>SampleDevices</code> in Kotlin? (Lesson 05)</p>
+    <div class="opts">
+      <button class="opt">a class with a companion</button>
+      <button class="opt" data-correct>an object declaration</button>
+      <button class="opt">a top-level function file</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">A Kotlin <code>object</code> appears in Swift as its single instance, <code>.shared</code>.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">A <code>Task { }</code> started in a SwiftUI button action runs its code after <code>await</code> on which actor? (Lesson 02 introduced <code>Task</code> and <code>@MainActor</code>)</p>
+    <div class="opts">
+      <button class="opt" data-correct>the main actor, inherited from View</button>
+      <button class="opt">a background actor, chosen at random</button>
+      <button class="opt">no actor, because it is unstructured</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why"><code>Task { }</code> inherits the caller's actor isolation. <code>Task.detached</code> doesn't, which is what section 3's experiment exploited.</p>
+  </div>
+  <div class="quiz mcq">
+    <p class="q">Android: you rotate the phone while a scan is running in a coroutine scope tied to the screen. What happens to the scan? (Lesson 03)</p>
+    <div class="opts">
+      <button class="opt">it continues and the new screen shows its result</button>
+      <button class="opt" data-correct>it is cancelled with the old screen</button>
+      <button class="opt">it pauses until the rotation ends</button>
+    </div>
+    <p class="feedback"></p>
+    <p class="why">Rotation recreates the Activity, and the scope tied to the old screen is cancelled with it. Lesson 08 moves the scan out of the screen.</p>
+  </div>
+
+  <h2 id="unaided-exercise">Unaided exercise</h2>
+  <div class="callout exercise">
+    <span class="label">Unaided exercise (no agent, on your m02 build)</span>
+    <ol>
+      <li><strong>Find the state of the detail screen.</strong> Without scrolling up, write down what state the detail screen needs. (Hint: compare it with what it <em>displays</em>.) Check your answer against section 4.</li>
+      <li><strong>Keys, made visible.</strong> Add a "Reverse" button that reverses the results. Compose/SwiftUI: give each row a local star toggle (<code>var starred by remember { mutableStateOf(false) }</code> in <code>DeviceRow</code>; <code>@State private var starred = false</code> in Swift's <code>DeviceRow</code>). Star one device and reverse: the star follows the device. Then key by position (Compose: drop <code>key = </code>; SwiftUI: <code>List(Array((devices ?? []).enumerated()), id: \.offset) { _, device in … }</code>), star, reverse again, and explain what you see. XML/UIKit: make the id comparison always return <code>false</code> (XML: <code>areItemsTheSame</code>; UIKit: append <code>"#" + UUID().uuidString</code> to each identifier, and look the device up with the part before <code>#</code> in the cell provider and in <code>didSelectRowAt</code>, or the rows come out blank) and compare the reverse animation with and without that change.</li>
+      <li><strong>Block the main thread on purpose.</strong> Replace <code>delay(1_500)</code> with <code>Thread.sleep(1_500)</code> (Android), or <code>try? await Task.sleep(…)</code> with <code>Thread.sleep(forTimeInterval: 1.5)</code> (iOS). Predict whether you'll see "Scanning…", then run it. Explain the result using section 3's first rule. Revert.</li>
+    </ol>
+  </div>
+
+  <h2 id="agent-brief">Agent brief</h2>
+  <p>Hand this to your coding agent, telling it your tracks. Then read its code against the walkthroughs above, run both apps yourself, and do the unaided exercise.</p>
+  <div class="callout brief copy-wrap">
+<pre class="brief-text">Lesson source: https://phongna-inn.github.io/carmd-kmp-course/lessons/07-declarative-ui-lists.html
+Before anything else, download the lesson and the reference pages it links, then read
+them in full. Don't use a summarising web fetch; it can leave out code.
+  mkdir -p .course    # in my workspace root, not inside demo/
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/lessons/07-declarative-ui-lists.html" -o .course/lesson-07.html
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/reference/declarative-ui-cheatsheet.html" -o .course/ref-declarative-ui-cheatsheet.html
+  curl -fsSL "https://phongna-inn.github.io/carmd-kmp-course/reference/glossary.html" -o .course/ref-glossary.html
+Use these files to answer my questions about this lesson without asking me for context.
+Then build what follows, using the lesson's "Full files" for my tracks exactly,
+except where the brief below says otherwise.
+
+Lesson 07 (Declarative UI: lists, async, navigation): build milestone m02, the Device Monitor
+shell with a list screen and a detail screen, on top of m01.
+My tracks: Android = [Compose | XML], iOS = [SwiftUI | UIKit]  (default Compose + SwiftUI).
+Starting point: my m01 project in demo/ (Lesson 06). Use exactly the file contents shown in the
+lesson's "Full files" section for my tracks, including package lines and imports. All paths
+are relative to demo/. Touch no file that isn't listed here.
+
+1. Shared (all tracks): replace
+     shared/src/commonMain/kotlin/com/example/devicemonitor/SampleDevices.kt
+   (it gains find(id)). Device.kt, Greeting.kt and Platform*.kt stay as they are.
+
+2. Android, both tracks: AndroidManifest.xml, settings.gradle.kts, gradle.properties and
+   androidApp/src/main/res/drawable/ic_bluetooth.xml stay as in m01.
+   Compose track:
+     build.gradle.kts (root): replaced (adds the serialization plugin)
+     androidApp/build.gradle.kts: replaced (adds the serialization plugin, navigation-compose
+       2.10.2, lifecycle-runtime-compose 2.11.0, kotlinx-serialization-core 1.12.0)
+     androidApp/src/main/java/com/example/devicemonitor/android/
+       DeviceListScreen.kt, DeviceDetailScreen.kt, DeviceMonitorApp.kt (new),
+       MainActivity.kt (replaced). Delete DeviceMonitorScreen.kt (m01's screen).
+   XML track:
+     androidApp/build.gradle.kts: replaced (adds fragment-ktx 1.9.1, recyclerview 1.4.0,
+       navigation-fragment 2.10.2)
+     androidApp/src/main/res/layout/: activity_main.xml (replaced), fragment_device_list.xml,
+       item_device.xml, fragment_device_detail.xml (new)
+     androidApp/src/main/res/navigation/nav_graph.xml (new)
+     androidApp/src/main/java/com/example/devicemonitor/android/
+       MainActivity.kt (replaced), DeviceListFragment.kt, DeviceAdapter.kt,
+       DeviceDetailFragment.kt (new)
+   Build, from demo/:
+     ./gradlew :shared:compileCommonMainKotlinMetadata :androidApp:assembleDebug
+   Run: `adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk`, then
+     `adb shell am start -n com.example.devicemonitor/com.example.devicemonitor.android.MainActivity`.
+
+3. iOS. project.yml and Info.plist stay as in m01. After adding and deleting files, run
+   `xcodegen generate` in iosApp/ so the target's file list is refreshed.
+   SwiftUI: add iosApp/iosApp/ContentView.swift, DeviceListView.swift, DeviceDetailView.swift;
+     replace iosApp/iosApp/iOSApp.swift; delete iosApp/iosApp/DeviceMonitorView.swift.
+   UIKit: add iosApp/iosApp/DeviceListViewController.swift, DeviceDetailViewController.swift;
+     replace iosApp/iosApp/SceneDelegate.swift; delete
+     iosApp/iosApp/DeviceMonitorViewController.swift. AppDelegate.swift stays.
+   Build, from demo/iosApp/ (pick an installed iPhone simulator on iOS 17 or newer; if two
+   share a name, use id=&lt;UDID&gt;):
+     xcodebuild -project iosApp.xcodeproj -scheme iosApp \
+       -destination 'platform=iOS Simulator,name=&lt;that iPhone&gt;' -derivedDataPath build build
+   Run: `xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/iosApp.app`, then
+     `xcrun simctl launch booted com.example.devicemonitor`.
+
+Acceptance checks (run every one you can, on an emulator and a simulator):
+- Both builds succeed with no compiler warnings from our own Kotlin or Swift code (don't use
+  -q to check warnings; read the build output). Not from our code, and expected: Gradle's
+  "Deprecated Gradle features … Gradle 10" line, "Unable to strip the following libraries"
+  from the Android build, Xcode's "appintentsmetadataprocessor … warning: Metadata
+  extraction skipped", and xcodebuild's "WARNING: Using the first of multiple matching
+  destinations" (it can appear even with id=&lt;UDID&gt;).
+- Launch: the title "Device Monitor" (m01's header icon is gone from the list screen: expected),
+  a "Device name filter" field, a full-width Scan button, "Tap Scan to look for devices." and
+  an empty list. Android: nothing under the status bar, and dark status-bar icons (judge it from
+  a screenshot).
+- Tap Scan: the button is disabled and a spinner + "Scanning…" show for ~1.5 s, then
+  "Devices found: 5" and five rows (name, id, "-48 dBm"…) in SampleDevices order.
+- Filter "sens" + Scan: one row (Tire Pressure Sensor). Filter "zzz" + Scan: the status shows
+  "No devices found. Try another filter." in red, there are no rows, and the button is enabled
+  again.
+- Tap a row: a detail screen with the icon, the name, "ID: …" and "Signal: … dBm". Back returns
+  to the list with filter and results still shown (Android: the on-screen Back button and
+  system back; iOS: the navigation bar's back button and swipe-back). System Back on the list
+  screen itself leaves the app, so press it only on the detail screen.
+- Android: rotate with results showing (`adb shell settings put system accelerometer_rotation 0`,
+  then `... user_rotation 1`): filter and results survive. Rotate during a scan: the screen
+  returns to "Tap Scan to look for devices." (expected, lesson section 5). Restore
+  user_rotation 0 and accelerometer_rotation 1 afterwards.
+- Android: double-tap the detail screen's Back button as fast as you can (an agent: two parallel
+  `adb shell input tap` processes), then tap a row: the list shows, never a blank screen, and the
+  row opens normally. Double-tap a row: one detail screen opens, no crash.
+- iOS: if you can drive the simulator (xcrun simctl has no tap command; idb or a throwaway
+  XCUITest that launches the installed app by bundle ID can. Don't script the Simulator window
+  with System Events: its clicks and keystrokes are unreliable), run the Scan, filter and
+  row-tap checks above. In automation, the status text ends in the single character "…", not
+  three dots. If you can't, say so and list which iOS checks you didn't run.
+Then walk me through each file line by line, tied to the lesson's walkthrough numbers, and
+show me where SampleDevices appears in
+shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework/Headers/Shared.h
+(run ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 if that folder doesn't exist).
+Do NOT do the unaided exercise for me.</pre>
+  </div>
+
+  <h2>Further reading</h2>
+  <ul>
+    <li><a href="../reference/declarative-ui-cheatsheet.html">Cheatsheet: declarative UI across four tracks</a>: state, lists, navigation, side effects and threads on one page, Compose ↔ XML ↔ SwiftUI ↔ UIKit.</li>
+    <li>Android: <a href="https://developer.android.com/develop/ui/compose/lists">Lists and grids</a>, <a href="https://developer.android.com/guide/navigation/design/type-safety">Type-safe navigation</a>, <a href="https://developer.android.com/guide/components/processes-and-threads">Processes and threads</a>, <a href="https://developer.android.com/develop/ui/compose/side-effects">Side-effects in Compose</a>.</li>
+    <li>Apple: <a href="https://developer.apple.com/documentation/swiftui/list">List</a>, <a href="https://developer.apple.com/documentation/swiftui/navigationstack">NavigationStack</a>, <a href="https://developer.apple.com/documentation/uikit/uitableviewdiffabledatasource">UITableViewDiffableDataSource</a>.</li>
+    <li><a href="../reference/glossary.html">Course glossary</a>: new terms from this lesson are marked (07).</li>
+    <li>Wisdom: <a href="https://reddit.com/r/androiddev">r/androiddev</a> and <a href="https://reddit.com/r/iOSProgramming">r/iOSProgramming</a>. Search there for "NavigationStack state lost" or "remember vs rememberSaveable navigation" to see how the section 5 traps bite real apps.</li>
+  </ul>
+
+  <section id="full-files">
+    <h2>Full files</h2>
+    <p>Every file this lesson adds or changes, complete. Open one to check your work. Everything else stays as in m01. Files are coloured by the part of the app they belong to; build files and the shared source set carry no colour. Delete m01's screen: <code>DeviceMonitorScreen.kt</code> (Compose), <code>iosApp/iosApp/DeviceMonitorView.swift</code> (SwiftUI) or <code>iosApp/iosApp/DeviceMonitorViewController.swift</code> (UIKit).</p>
+
+    <details class="full-file">
+      <summary>shared/src/commonMain/kotlin/com/example/devicemonitor/SampleDevices.kt</summary>
+<pre><code>package com.example.devicemonitor
+
+// Stand-in for a real BLE scan until Lesson 13.
+object SampleDevices {
+    val all: List&lt;Device&gt; = listOf(
+        Device(id = "C4:7C:8D:6A:01:10", name = "OBD-II Adapter", rssi = -48),
+        Device(id = "C4:7C:8D:6A:01:11", name = "Heart Rate Monitor", rssi = -61),
+        Device(id = "C4:7C:8D:6A:01:12", name = "Tire Pressure Sensor", rssi = -67),
+        Device(id = "C4:7C:8D:6A:01:13", name = "Thermometer", rssi = -74),
+        Device(id = "C4:7C:8D:6A:01:14", name = "Smart Scale", rssi = -85),
+    )
+
+    fun matching(filter: String): List&lt;Device&gt; =
+        all.filter { it.name.contains(filter.trim(), ignoreCase = true) }
+
+    fun find(id: String): Device? = all.firstOrNull { it.id == id }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose">
+      <summary>build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application") version "9.4.1" apply false
+    id("com.android.kotlin.multiplatform.library") version "9.4.1" apply false
+    id("org.jetbrains.kotlin.multiplatform") version "2.4.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.21" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.21" apply false
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose">
+      <summary>androidApp/build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+android {
+    namespace = "com.example.devicemonitor.android"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "com.example.devicemonitor"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildFeatures { compose = true }
+}
+
+dependencies {
+    implementation(project(":shared"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.12.0")
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceListScreen.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.example.devicemonitor.Device
+import com.example.devicemonitor.SampleDevices
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+// Stateful: owns the screen's state and the scan side effect.
+@Composable
+fun DeviceListScreen(onDeviceClick: (Device) -&gt; Unit) {
+    var filter by rememberSaveable { mutableStateOf("") }
+    var foundIds by rememberSaveable { mutableStateOf&lt;List&lt;String&gt;?&gt;(null) }
+    var isScanning by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    DeviceListContent(
+        filter = filter,
+        onFilterChange = { filter = it },
+        isScanning = isScanning,
+        devices = foundIds?.mapNotNull { SampleDevices.find(it) },
+        onScan = {
+            val query = filter
+            isScanning = true
+            foundIds = null
+            scope.launch {
+                delay(1_500)
+                foundIds = SampleDevices.matching(query).map { it.id }
+                isScanning = false
+            }
+        },
+        onDeviceClick = onDeviceClick,
+    )
+}
+
+// Stateless: renders whatever it's given, reports events up.
+@Composable
+fun DeviceListContent(
+    filter: String,
+    onFilterChange: (String) -&gt; Unit,
+    isScanning: Boolean,
+    devices: List&lt;Device&gt;?,
+    onScan: () -&gt; Unit,
+    onDeviceClick: (Device) -&gt; Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Device Monitor", style = MaterialTheme.typography.headlineSmall)
+        OutlinedTextField(
+            value = filter,
+            onValueChange = onFilterChange,
+            label = { Text("Device name filter") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(onClick = onScan, enabled = !isScanning, modifier = Modifier.fillMaxWidth()) {
+            Text("Scan")
+        }
+        ScanStatus(isScanning = isScanning, devices = devices)
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(devices.orEmpty(), key = { it.id }) { device -&gt;
+                DeviceRow(device = device, onClick = { onDeviceClick(device) })
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScanStatus(isScanning: Boolean, devices: List&lt;Device&gt;?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when {
+            isScanning -&gt; {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("Scanning…")
+            }
+            devices == null -&gt; Text("Tap Scan to look for devices.")
+            devices.isEmpty() -&gt; Text(
+                "No devices found. Try another filter.",
+                color = MaterialTheme.colorScheme.error,
+            )
+            else -&gt; Text("Devices found: ${devices.size}")
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(device: Device, onClick: () -&gt; Unit) {
+    ListItem(
+        headlineContent = { Text(device.name) },
+        supportingContent = { Text(device.id) },
+        trailingContent = { Text("${device.rssi} dBm") },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceDetailScreen.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.dropUnlessResumed
+import com.example.devicemonitor.SampleDevices
+
+@Composable
+fun DeviceDetailScreen(deviceId: String, onBack: () -&gt; Unit) {
+    val device = SampleDevices.find(deviceId)
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_bluetooth),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+            modifier = Modifier.size(96.dp),
+        )
+        if (device == null) {
+            Text("Unknown device", color = MaterialTheme.colorScheme.error)
+        } else {
+            Text(device.name, style = MaterialTheme.typography.headlineSmall)
+            Text("ID: ${device.id}")
+            Text("Signal: ${device.rssi} dBm")
+        }
+        TextButton(onClick = dropUnlessResumed { onBack() }) {
+            Text("Back")
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceMonitorApp.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
+import kotlinx.serialization.Serializable
+
+@Serializable
+data object DeviceList
+
+@Serializable
+data class DeviceDetail(val id: String)
+
+@Composable
+fun DeviceMonitorApp() {
+    val navController = rememberNavController()
+    Scaffold { innerPadding -&gt;
+        NavHost(
+            navController = navController,
+            startDestination = DeviceList,
+            modifier = Modifier.padding(innerPadding),
+        ) {
+            composable&lt;DeviceList&gt; {
+                DeviceListScreen(
+                    onDeviceClick = { device -&gt; navController.navigate(DeviceDetail(device.id)) },
+                )
+            }
+            composable&lt;DeviceDetail&gt; { entry -&gt;
+                val route: DeviceDetail = entry.toRoute()
+                DeviceDetailScreen(
+                    deviceId = route.id,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="compose" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.MaterialTheme
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                DeviceMonitorApp()
+            }
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml">
+      <summary>androidApp/build.gradle.kts</summary>
+<pre><code>plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "com.example.devicemonitor.android"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "com.example.devicemonitor"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildFeatures { viewBinding = true }
+}
+
+dependencies {
+    implementation(project(":shared"))
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
+    implementation("androidx.navigation:navigation-fragment:2.10.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/layout/activity_main.xml</summary>
+<pre><code>&lt;FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"&gt;
+
+    &lt;androidx.fragment.app.FragmentContainerView
+        android:id="@+id/navHost"
+        android:name="androidx.navigation.fragment.NavHostFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:defaultNavHost="true"
+        app:navGraph="@navigation/nav_graph" /&gt;
+&lt;/FrameLayout&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/navigation/nav_graph.xml</summary>
+<pre><code>&lt;navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/deviceList"&gt;
+
+    &lt;fragment
+        android:id="@+id/deviceList"
+        android:name="com.example.devicemonitor.android.DeviceListFragment"&gt;
+        &lt;action
+            android:id="@+id/toDetail"
+            app:destination="@id/deviceDetail" /&gt;
+    &lt;/fragment&gt;
+
+    &lt;fragment
+        android:id="@+id/deviceDetail"
+        android:name="com.example.devicemonitor.android.DeviceDetailFragment"&gt;
+        &lt;argument
+            android:name="deviceId"
+            app:argType="string" /&gt;
+    &lt;/fragment&gt;
+&lt;/navigation&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/layout/fragment_device_list.xml</summary>
+<pre><code>&lt;androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"&gt;
+
+    &lt;TextView
+        android:id="@+id/title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Device Monitor"
+        android:textAppearance="@style/TextAppearance.AppCompat.Headline"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" /&gt;
+
+    &lt;EditText
+        android:id="@+id/filterInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="Device name filter"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/title" /&gt;
+
+    &lt;Button
+        android:id="@+id/scanButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Scan"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/filterInput" /&gt;
+
+    &lt;ProgressBar
+        android:id="@+id/progress"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/statusText"
+        app:layout_constraintBottom_toBottomOf="@id/statusText" /&gt;
+
+    &lt;TextView
+        android:id="@+id/statusText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="12dp"
+        app:layout_constraintStart_toEndOf="@id/progress"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/scanButton"
+        app:layout_goneMarginStart="0dp" /&gt;
+
+    &lt;androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/deviceList"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/statusText"
+        app:layout_constraintBottom_toBottomOf="parent" /&gt;
+&lt;/androidx.constraintlayout.widget.ConstraintLayout&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/layout/item_device.xml</summary>
+<pre><code>&lt;androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:paddingVertical="12dp"&gt;
+
+    &lt;TextView
+        android:id="@+id/deviceName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/deviceRssi"
+        app:layout_constraintTop_toTopOf="parent" /&gt;
+
+    &lt;TextView
+        android:id="@+id/deviceId"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/deviceRssi"
+        app:layout_constraintTop_toBottomOf="@id/deviceName" /&gt;
+
+    &lt;TextView
+        android:id="@+id/deviceRssi"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" /&gt;
+&lt;/androidx.constraintlayout.widget.ConstraintLayout&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/res/layout/fragment_device_detail.xml</summary>
+<pre><code>&lt;LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="16dp"&gt;
+
+    &lt;ImageView
+        android:id="@+id/deviceIcon"
+        android:layout_width="96dp"
+        android:layout_height="96dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_bluetooth"
+        app:tint="?attr/colorAccent" /&gt;
+
+    &lt;TextView
+        android:id="@+id/deviceName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:textAppearance="@style/TextAppearance.AppCompat.Headline" /&gt;
+
+    &lt;TextView
+        android:id="@+id/deviceId"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp" /&gt;
+
+    &lt;TextView
+        android:id="@+id/deviceRssi"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp" /&gt;
+
+    &lt;Button
+        android:id="@+id/backButton"
+        style="@style/Widget.AppCompat.Button.Borderless.Colored"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Back" /&gt;
+&lt;/LinearLayout&gt;</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/MainActivity.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceListFragment.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.graphics.Color
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.DividerItemDecoration
+import com.example.devicemonitor.SampleDevices
+import com.example.devicemonitor.android.databinding.FragmentDeviceListBinding
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+class DeviceListFragment : Fragment() {
+    // Screen state lives in fields; render() copies it into the views.
+    private var foundIds: ArrayList&lt;String&gt;? = null
+    private var isScanning = false
+
+    private var binding: FragmentDeviceListBinding? = null
+    private val adapter = DeviceAdapter { device -&gt;
+        val nav = findNavController()
+        // A fast double tap delivers two clicks; only navigate from the list itself.
+        if (nav.currentDestination?.id == R.id.deviceList) {
+            nav.navigate(R.id.toDetail, Bundle().apply { putString("deviceId", device.id) })
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        foundIds = savedInstanceState?.getStringArrayList("foundIds")
+    }
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        val b = FragmentDeviceListBinding.inflate(inflater, container, false)
+        binding = b
+        b.deviceList.adapter = adapter
+        b.deviceList.addItemDecoration(DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL))
+        b.scanButton.setOnClickListener { scan(b.filterInput.text.toString()) }
+        render()
+        return b.root
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        binding?.deviceList?.adapter = null // the adapter outlives the view; don't let it keep the old list
+        binding = null
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putStringArrayList("foundIds", foundIds)
+    }
+
+    private fun scan(query: String) {
+        isScanning = true
+        foundIds = null
+        render()
+        lifecycleScope.launch {
+            delay(1_500)
+            foundIds = ArrayList(SampleDevices.matching(query).map { it.id })
+            isScanning = false
+            render()
+        }
+    }
+
+    // The one place that touches views: every state change ends here.
+    private fun render() {
+        val b = binding ?: return
+        val devices = foundIds?.mapNotNull { SampleDevices.find(it) }
+        b.scanButton.isEnabled = !isScanning
+        b.progress.visibility = if (isScanning) View.VISIBLE else View.GONE
+        b.statusText.text = when {
+            isScanning -&gt; "Scanning…"
+            devices == null -&gt; "Tap Scan to look for devices."
+            devices.isEmpty() -&gt; "No devices found. Try another filter."
+            else -&gt; "Devices found: ${devices.size}"
+        }
+        b.statusText.setTextColor(if (devices?.isEmpty() == true) Color.RED else Color.DKGRAY)
+        adapter.submitList(devices.orEmpty())
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceAdapter.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.RecyclerView
+import com.example.devicemonitor.Device
+import com.example.devicemonitor.android.databinding.ItemDeviceBinding
+
+class DeviceAdapter(
+    private val onClick: (Device) -&gt; Unit,
+) : ListAdapter&lt;Device, DeviceAdapter.Holder&gt;(DeviceDiff) {
+
+    class Holder(val binding: ItemDeviceBinding) : RecyclerView.ViewHolder(binding.root)
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
+        Holder(ItemDeviceBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+
+    override fun onBindViewHolder(holder: Holder, position: Int) {
+        val device = getItem(position)
+        holder.binding.deviceName.text = device.name
+        holder.binding.deviceId.text = device.id
+        holder.binding.deviceRssi.text = "${device.rssi} dBm"
+        holder.itemView.setOnClickListener { onClick(device) }
+    }
+}
+
+private object DeviceDiff : DiffUtil.ItemCallback&lt;Device&gt;() {
+    override fun areItemsTheSame(oldItem: Device, newItem: Device) = oldItem.id == newItem.id
+    override fun areContentsTheSame(oldItem: Device, newItem: Device) = oldItem == newItem
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="xml" data-part="android">
+      <summary>androidApp/src/main/java/com/example/devicemonitor/android/DeviceDetailFragment.kt</summary>
+<pre><code>package com.example.devicemonitor.android
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+import androidx.navigation.fragment.findNavController
+import com.example.devicemonitor.SampleDevices
+import com.example.devicemonitor.android.databinding.FragmentDeviceDetailBinding
+
+class DeviceDetailFragment : Fragment() {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        val b = FragmentDeviceDetailBinding.inflate(inflater, container, false)
+        val deviceId = requireArguments().getString("deviceId").orEmpty()
+        val device = SampleDevices.find(deviceId)
+        if (device == null) {
+            b.deviceName.text = "Unknown device"
+        } else {
+            b.deviceName.text = device.name
+            b.deviceId.text = "ID: ${device.id}"
+            b.deviceRssi.text = "Signal: ${device.rssi} dBm"
+        }
+        b.backButton.setOnClickListener {
+            val nav = findNavController()
+            // A fast double tap would otherwise pop the list too and empty the back stack.
+            if (nav.currentDestination?.id == R.id.deviceDetail) nav.popBackStack()
+        }
+        return b.root
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/iOSApp.swift</summary>
+<pre><code>import SwiftUI
+
+@main
+struct iOSApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/ContentView.swift</summary>
+<pre><code>import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        NavigationStack {
+            DeviceListView()
+                .navigationDestination(for: DeviceRoute.self) { route in
+                    DeviceDetailView(deviceId: route.id)
+                }
+        }
+    }
+}
+
+struct DeviceRoute: Hashable {
+    let id: String
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/DeviceListView.swift</summary>
+<pre><code>import SwiftUI
+import Shared
+
+struct DeviceListView: View {
+    @State private var filter = ""
+    @State private var devices: [Device]? = nil
+    @State private var isScanning = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("Device name filter", text: $filter)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+            Button(action: scan) {
+                Text("Scan")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isScanning)
+            ScanStatus(isScanning: isScanning, devices: devices)
+            List(devices ?? [], id: \.id) { device in
+                NavigationLink(value: DeviceRoute(id: device.id)) {
+                    DeviceRow(device: device)
+                }
+            }
+            .listStyle(.plain)
+        }
+        .padding()
+        .navigationTitle("Device Monitor")
+    }
+
+    private func scan() {
+        let query = filter
+        isScanning = true
+        devices = nil
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            devices = SampleDevices.shared.matching(filter: query)
+            isScanning = false
+        }
+    }
+}
+
+private struct ScanStatus: View {
+    let isScanning: Bool
+    let devices: [Device]?
+
+    var body: some View {
+        if isScanning {
+            HStack {
+                ProgressView()
+                Text("Scanning…")
+            }
+        } else if let devices {
+            if devices.isEmpty {
+                Text("No devices found. Try another filter.")
+                    .foregroundStyle(.red)
+            } else {
+                Text("Devices found: \(devices.count)")
+            }
+        } else {
+            Text("Tap Scan to look for devices.")
+        }
+    }
+}
+
+private struct DeviceRow: View {
+    let device: Device
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(device.name)
+                Text(device.id)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("\(device.rssi) dBm")
+                .font(.caption)
+        }
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="swiftui" data-part="ios">
+      <summary>iosApp/iosApp/DeviceDetailView.swift</summary>
+<pre><code>import SwiftUI
+import Shared
+
+struct DeviceDetailView: View {
+    let deviceId: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.system(size: 64))
+                .foregroundStyle(.tint)
+            if let device = SampleDevices.shared.find(id: deviceId) {
+                Text(device.name)
+                    .font(.title2)
+                Text("ID: \(device.id)")
+                Text("Signal: \(device.rssi) dBm")
+            } else {
+                Text("Unknown device")
+                    .foregroundStyle(.red)
+            }
+            Spacer()
+        }
+        .padding()
+        .navigationTitle("Device")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/SceneDelegate.swift</summary>
+<pre><code>import UIKit
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
+               options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
+        window.rootViewController = UINavigationController(rootViewController: DeviceListViewController())
+        window.makeKeyAndVisible()
+        self.window = window
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/DeviceListViewController.swift</summary>
+<pre><code>import UIKit
+import Shared
+
+final class DeviceListViewController: UIViewController, UITableViewDelegate {
+    // Screen state lives in properties; render() copies it into the views.
+    private var devices: [Device]? = nil
+    private var isScanning = false
+
+    private let filterField = UITextField()
+    private let scanButton = UIButton(configuration: .filled())
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let statusLabel = UILabel()
+    private let tableView = UITableView()
+    private lazy var dataSource = UITableViewDiffableDataSource&lt;Int, String&gt;(tableView: tableView) {
+        tableView, indexPath, deviceId in
+        let cell = tableView.dequeueReusableCell(withIdentifier: "device", for: indexPath)
+        var content = UIListContentConfiguration.subtitleCell()
+        if let device = SampleDevices.shared.find(id: deviceId) {
+            content.text = device.name
+            content.secondaryText = "\(device.id)   \(device.rssi) dBm"
+        }
+        cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Device Monitor"
+        navigationController?.navigationBar.prefersLargeTitles = true
+        view.backgroundColor = .systemBackground
+
+        filterField.placeholder = "Device name filter"
+        filterField.borderStyle = .roundedRect
+        filterField.autocorrectionType = .no
+        scanButton.configuration?.title = "Scan"
+        scanButton.addAction(UIAction { [weak self] _ in self?.scan() }, for: .touchUpInside)
+        statusLabel.numberOfLines = 0
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "device")
+        tableView.delegate = self
+
+        let statusRow = UIStackView(arrangedSubviews: [spinner, statusLabel])
+        statusRow.spacing = 8
+        let stack = UIStackView(arrangedSubviews: [filterField, scanButton, statusRow, tableView])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.layoutMarginsGuide.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        render()
+    }
+
+    private func scan() {
+        let query = filterField.text ?? ""
+        isScanning = true
+        devices = nil
+        render()
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            devices = SampleDevices.shared.matching(filter: query)
+            isScanning = false
+            render()
+        }
+    }
+
+    // The one place that touches views: every state change ends here.
+    private func render() {
+        scanButton.isEnabled = !isScanning
+        if isScanning { spinner.startAnimating() } else { spinner.stopAnimating() }
+        spinner.isHidden = !isScanning
+        if isScanning {
+            statusLabel.text = "Scanning…"
+        } else if let devices {
+            statusLabel.text = devices.isEmpty
+                ? "No devices found. Try another filter."
+                : "Devices found: \(devices.count)"
+        } else {
+            statusLabel.text = "Tap Scan to look for devices."
+        }
+        statusLabel.textColor = devices?.isEmpty == true ? .systemRed : .label
+
+        var snapshot = NSDiffableDataSourceSnapshot&lt;Int, String&gt;()
+        snapshot.appendSections([0])
+        snapshot.appendItems((devices ?? []).map(\.id))
+        dataSource.apply(snapshot, animatingDifferences: true)
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        guard let deviceId = dataSource.itemIdentifier(for: indexPath) else { return }
+        navigationController?.pushViewController(DeviceDetailViewController(deviceId: deviceId), animated: true)
+    }
+}</code></pre>
+    </details>
+    <details class="full-file" data-track="uikit" data-part="ios">
+      <summary>iosApp/iosApp/DeviceDetailViewController.swift</summary>
+<pre><code>import UIKit
+import Shared
+
+final class DeviceDetailViewController: UIViewController {
+    private let deviceId: String
+
+    init(deviceId: String) {
+        self.deviceId = deviceId
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Device"
+        navigationItem.largeTitleDisplayMode = .never
+        view.backgroundColor = .systemBackground
+
+        let icon = UIImageView(image: UIImage(systemName: "antenna.radiowaves.left.and.right"))
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 64)
+        icon.tintColor = .tintColor
+        let nameLabel = UILabel()
+        nameLabel.font = .preferredFont(forTextStyle: .title2)
+        let idLabel = UILabel()
+        let rssiLabel = UILabel()
+
+        if let device = SampleDevices.shared.find(id: deviceId) {
+            nameLabel.text = device.name
+            idLabel.text = "ID: \(device.id)"
+            rssiLabel.text = "Signal: \(device.rssi) dBm"
+        } else {
+            nameLabel.text = "Unknown device"
+            nameLabel.textColor = .systemRed
+        }
+
+        let stack = UIStackView(arrangedSubviews: [icon, nameLabel, idLabel, rssiLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.layoutMarginsGuide.topAnchor, constant: 12),
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+        ])
+    }
+}</code></pre>
+    </details>
+  </section>
+
+  <nav class="progress-links">
+    <a href="06-declarative-ui-components.html">← 06 Declarative UI: components, state, layout</a>
+    <a href="08-shared-viewmodels.html">Next: 08 Shared ViewModels →</a>
+  </nav>
+</main>
+</body>
+</html>

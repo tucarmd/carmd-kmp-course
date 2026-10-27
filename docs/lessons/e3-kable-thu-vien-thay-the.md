@@ -385,14 +385,14 @@ Chúng tôi build e3 trên cả bốn track (Kotlin 2.4.20, Kable 0.45.0, Koin 4
 
 | Ở đâu | Chúng tôi đã làm gì | Stack Kable | Stack tự viết |
 |---|---|---|---|
-| API 36 emulator, Compose and XML | Scan, chờ | "Scanning…", rồi sau 10 s "No devices found. Try another filter."; `dumpsys`: một lần quét, `ScanMode=LOW_LATENCY`, dừng sau 9,9 s | như vậy (bài 13) |
-| API 36 emulator, Compose | Scan, Stop sau 2 s | `dumpsys`: dừng sau 2,1 s | như vậy |
-| API 36 emulator, Compose | Tắt Bluetooth (`adb shell cmd bluetooth_manager disable`), Scan | "Bluetooth is off. Turn it on, then scan again." (từ `ScanningService`, trước khi Kable chạy) | như vậy |
+| Emulator API 36, Compose và XML | Scan, chờ | "Scanning…", rồi sau 10 s "No devices found. Try another filter."; `dumpsys`: một lần quét, `ScanMode=LOW_LATENCY`, dừng sau 9,9 s | như vậy (bài 13) |
+| Emulator API 36, Compose | Scan, Stop sau 2 s | `dumpsys`: dừng sau 2,1 s | như vậy |
+| Emulator API 36, Compose | Tắt Bluetooth (`adb shell cmd bluetooth_manager disable`), Scan | "Bluetooth is off. Turn it on, then scan again." (từ `ScanningService`, trước khi Kable chạy) | như vậy |
 | Emulator API 36, Compose và XML (tự viết: Compose) | Scan, rồi tắt Bluetooth sau 2 s | "Scanning…" cho tới giới hạn 10 s, rồi "No devices found. Try another filter." | "Scan failed: Bluetooth was turned off." ngay lập tức |
-| API 30 emulator, Compose | Scan | hai hàng `gDevice-beacon`, `BE:AC:10:00:00:01` và `…:02`, "Devices found: 2" | như vậy (bài 13) |
-| API 30 emulator, Compose | màn hình của một beacon, Connect | "Status: connecting…", rồi khoảng 15 s sau khi bấm "Connection failed: gDevice-beacon didn't answer within 10 seconds."; logcat: `cancelOpen()` ở 10 s, `close()` 5 s sau | cùng hộp thoại đó khoảng 10 s sau khi bấm; `cancelOpen()` và `close()` cách nhau 6 ms |
-| API 30 emulator, Compose | Tắt vị trí (`adb shell cmd location set-location-enabled false`), Scan | "Scan failed: Scanning needs Location turned on on this phone (Android 11 and lower)." | "No devices found. Try another filter." sau 10 s |
-| iOS 26.2 Simulator, SwiftUI and UIKit | Scan (một XCUITest tạm) | "Scan failed: This phone has no Bluetooth LE radio." (`BluetoothProvider` nói `null`: radio của Simulator là `unsupported`); app vẫn ở foreground | như vậy (bài 13) |
+| Emulator API 30, Compose | Scan | hai hàng `gDevice-beacon`, `BE:AC:10:00:00:01` và `…:02`, "Devices found: 2" | như vậy (bài 13) |
+| Emulator API 30, Compose | màn hình của một beacon, Connect | "Status: connecting…", rồi khoảng 15 s sau khi bấm "Connection failed: gDevice-beacon didn't answer within 10 seconds."; logcat: `cancelOpen()` ở 10 s, `close()` 5 s sau | cùng hộp thoại đó khoảng 10 s sau khi bấm; `cancelOpen()` và `close()` cách nhau 6 ms |
+| Emulator API 30, Compose | Tắt vị trí (`adb shell cmd location set-location-enabled false`), Scan | "Scan failed: Scanning needs Location turned on on this phone (Android 11 and lower)." | "No devices found. Try another filter." sau 10 s |
+| Simulator iOS 26.2, SwiftUI và UIKit | Scan (một XCUITest tạm) | "Scan failed: This phone has no Bluetooth LE radio." (`BluetoothProvider` nói `null`: radio của Simulator là `unsupported`); app vẫn ở foreground | như vậy (bài 13) |
 
 Mục tiêu thật, LightBlue được quét, kết nối, đọc, đăng ký và ngắt kết nối qua Kable, cần điện thoại của bạn; các hàng iOS của mục 7 cũng vậy. Brief cho agent liệt kê chúng là các kiểm tra trên thiết bị. **e3 là một điểm dừng tự nhiên** khi test pass trên cả hai nền tảng, emulator và Simulator hiện các dòng ở trên, và xoá dòng Kable trả lại cho bạn hành vi của m15. Hãy commit nó, và gắn tag.
 
@@ -1451,7 +1451,7 @@ allowOverride(false) -> DefinitionOverrideException: Already existing definition
 ```
 
 1. **Có `close()`**: đúng như bài nói. Kable đứng cuối thì thắng; bỏ dòng Kable thì về adapter tự viết; đặt Kable **trước** `platformModule` thì adapter tự viết thắng. Thứ tự trong `modules(...)` chính là công tắc.
-2. **Không có `close()`**: cả ba lần đều ra Kable. Đây là gotcha của [bài 17](../17-trang-thai-may-va-kho-log/): Koin 4.2.2 giữ instance của `single` **ngay trong object module**, và `appModule` là một `val` dùng chung, nên `ScanningService` dựng ở lần đầu bị dùng lại cho các lần sau. Trong app chỉ có một Koin mỗi process nên không gặp; trong test dựng nhiều Koin trên cùng module thì **phải** `close()`.
+2. **Không có `close()`**: cả ba lần đều ra Kable. Đây là gotcha của [bài 17](17-trang-thai-may-va-kho-log.md): Koin 4.2.2 giữ instance của `single` **ngay trong object module**, và `appModule` là một `val` dùng chung, nên `ScanningService` dựng ở lần đầu bị dùng lại cho các lần sau. Trong app chỉ có một Koin mỗi process nên không gặp; trong test dựng nhiều Koin trên cùng module thì **phải** `close()`.
 3. **`allowOverride(false)`** biến việc ghi đè thành `DefinitionOverrideException` ngay lúc khởi động. App này cố tình dựa vào việc ghi đè, nên không bật nó; test graph ghim rằng Kable thắng.
 
 So với TS/JS: giống `Object.assign({}, platformBindings, kableBindings)`: khoá trùng thì bên phải thắng; đổi thứ tự tham số là đổi kết quả.

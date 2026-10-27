@@ -55,7 +55,8 @@ final class DetailViewController: UIViewController {
             label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
     }
-
+    
+    // UIT kit hay gì?>>>>
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         lifecycleLog.notice("DetailViewController viewWillAppear")

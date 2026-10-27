@@ -211,3 +211,10 @@
 .md-typeset .lab-lane:last-child.on { border-left-color: var(--c-inbound); background: var(--c-inbound-soft); }
 .md-typeset pre.lab-log.short { height: 7rem; margin-top: .7rem; }
 @media (max-width: 40em) { .md-typeset .lab-lane { flex-direction: column; gap: .1rem; } }
+
+/* ---- Luật đọc rõ (CLAUDE.md chung): khối có chữ xếp 1 cột từ trên xuống, không chia cột hẹp ---- */
+.md-typeset .compare,
+.md-typeset .toy-phones,
+.md-typeset .lab-grid,
+.md-typeset .lab-apps { grid-template-columns: 1fr; }
+.md-typeset .toy-phones .phone, .md-typeset .lab-phone { max-width: 24rem; }

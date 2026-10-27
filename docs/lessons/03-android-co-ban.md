@@ -1365,3 +1365,27 @@ Tự kiểm tra: đánh dấu được hết là qua bài, sang bài 04.
 - [ ] Chỉ ra chỗ khác nhau giữa track Compose và track XML (chỉ phần đưa UI lên màn hình).
 - [ ] Đọc hiểu một đoạn Java cơ bản nhờ Java reading cheatsheet.
 - [ ] Làm xong 2 bài tự làm ở trên mà không cần agent.
+
+## Plan
+
+**Goal:** Hoàn thành mọi mục trong checklist "Sau bài này tự làm được gì" — hiểu kiến trúc project Android, vòng đời Activity, và thực hành trên Emulator/máy thật.
+
+- [ ] Đọc lại mục 1 + A1, mở project `scratch/lesson-03` (hoặc tạo nếu chưa có) và đối chiếu từng file Gradle với mô tả trong bài
+- [ ] Đọc mục 1 ghi chú về AGP 9 — tự trả lời: vì sao không cần plugin `org.jetbrains.kotlin.android`?
+- [ ] Đọc A2, tự điền `compileSdk / minSdk / targetSdk` vào `build.gradle.kts` của project và giải thích mỗi con số
+- [ ] Đọc mục 2 + A3 — viết ra bằng lời mình: Activity, Context, Intent, Manifest là gì; explicit vs implicit intent
+- [ ] Đọc mục 2 phần Manifest — giải thích intent filter `MAIN + LAUNCHER` và `android:exported="true"`
+- [ ] Đọc mục 3 + A4 — vẽ/viết thứ tự 6 callback vòng đời và 3 khoảng (tồn tại / nhìn thấy / tương tác)
+- [ ] Build & chạy app lifecycle-logger trên Emulator; thực hiện 6 thao tác (mở, Home, mở lại, xoay, mở web, Back) và so log Logcat với dự đoán
+- [ ] Đọc mục 4 + A5 — giải thích vì sao field Activity mất khi xoay, và khi nào dùng ViewModel / Bundle
+- [ ] So sánh code Compose vs XML trong bài — ghi ra chỗ khác nhau (chỉ phần đưa UI lên màn hình)
+- [ ] Đọc Java reading cheatsheet (link trong bài) — đọc hiểu một đoạn Java mẫu
+- [ ] Làm 2 bài tự làm trong bài mà không nhờ agent
+- [ ] Chạy lại checklist "Sau bài này tự làm được gì" — đánh dấu hết thì qua bài 04
+
+**Out of scope:** Chưa làm ViewModel (bài 08), chưa kết nối BLE thật, chưa đụng đến iOS/KMP.
+
+**Open questions:**
+
+- Project `scratch/lesson-03` đã có sẵn hay cần tạo mới từ Android Studio?
+- Dùng Emulator hay máy Android thật để test vòng đời?
